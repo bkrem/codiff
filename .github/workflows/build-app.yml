@@ -14,6 +14,9 @@ on:
       - 'src/**'
       - 'vite.config.*'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     concurrency:
@@ -55,14 +58,23 @@ jobs:
 
       - name: Build Native Apps
         run: |
-          pnpm exec electron-forge make
-          pnpm exec electron-forge package --platform=linux --arch=x64
-          pnpm exec electron-forge make --platform=win32
+          rm -rf artifacts/native-apps
+          mkdir -p artifacts/native-apps
+
+          pnpm exec electron-forge make --platform=linux --arch=x64
+          find out -maxdepth 5 -type f | sort
+          cp -R out/make artifacts/native-apps/linux-make
+          tar -czf artifacts/native-apps/codiff-linux-x64.tar.gz -C out codiff-linux-x64
+
+          pnpm exec electron-forge make --platform=win32 --arch=x64
+          find out -maxdepth 5 -type f | sort
+          cp -R out/make artifacts/native-apps/windows-make
+
+          find artifacts/native-apps -maxdepth 6 -type f | sort
 
       - name: Upload Artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: native-apps
-          path: |
-            ./out/make
-            ./out/codiff-linux-x64
+          path: ./artifacts/native-apps

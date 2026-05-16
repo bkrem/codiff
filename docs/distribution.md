@@ -38,10 +38,12 @@ The signing certificate must already be present in the local keychain. If `APPLE
 
 `.github/workflows/build-app.yml` builds Linux and Windows artifacts on Ubuntu with Wine, matching Athena Crisis' Linux/Windows CI approach.
 
-The workflow uploads:
+The workflow collects Linux artifacts before the Windows build can replace the
+Forge `out` directory, then uploads:
 
-- `out/make`
-- `out/codiff-linux-x64`
+- `artifacts/native-apps/linux-make`
+- `artifacts/native-apps/codiff-linux-x64.tar.gz`
+- `artifacts/native-apps/windows-make`
 
 macOS builds are intentionally local-only for now because they require the Developer ID certificate in the local keychain.
 
