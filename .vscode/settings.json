@@ -3,9 +3,8 @@
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
   "editor.codeActionsOnSave": {
-    "source.fixAll.oxc": "always"
+    "source.fixAll.oxc": "explicit"
   },
-  "oxc.fmt.configPath": ".oxfmtrc.jsonc",
   "[javascript]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
@@ -18,10 +17,16 @@
   "[json]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
+  "[jsonc]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
   "typescript.preferences.importModuleSpecifierEnding": "js",
   "typescript.reportStyleChecksAsWarnings": false,
   "typescript.updateImportsOnFileMove.enabled": "always",
+  "typescript.preferences.autoImportFileExcludePatterns": ["**/node_modules/vitest"],
   "typescript.tsdk": "node_modules/typescript/lib",
-  "editor.defaultFormatter": "oxc.oxc-vscode",
-  "editor.formatOnSaveMode": "file"
+  "typescript.experimental.useTsgo": true
 }
