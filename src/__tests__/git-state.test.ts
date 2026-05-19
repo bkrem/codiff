@@ -389,12 +389,76 @@ test('readRepositoryChangeSignature changes for unstaged content edits', async (
   });
 });
 
+test('readRepositoryChangeSignature ignores staging and unstaging tracked changes', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'one\n');
+    await commitAll(repo, 'initial commit');
+    await writeRepoFile(repo, 'file.txt', 'two changed\n');
+
+    const before = await readRepositoryChangeSignature(repo);
+    await git(repo, ['add', 'file.txt']);
+    const staged = await readRepositoryChangeSignature(repo);
+    await git(repo, ['reset', 'HEAD', '--', 'file.txt']);
+    const unstaged = await readRepositoryChangeSignature(repo);
+
+    expect(staged.signature).toBe(before.signature);
+    expect(unstaged.signature).toBe(before.signature);
+  });
+});
+
 test('readRepositoryChangeSignature changes for untracked content edits', async () => {
   await withRepo(async (repo) => {
     await writeRepoFile(repo, 'file.txt', 'one\n');
 
     const before = await readRepositoryChangeSignature(repo);
     await writeRepoFile(repo, 'file.txt', 'two changed\n');
+    const after = await readRepositoryChangeSignature(repo);
+
+    expect(after.signature).not.toBe(before.signature);
+  });
+});
+
+test('readRepositoryChangeSignature ignores staging and unstaging untracked files', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'one\n');
+
+    const before = await readRepositoryChangeSignature(repo);
+    await git(repo, ['add', 'file.txt']);
+    const staged = await readRepositoryChangeSignature(repo);
+    await git(repo, ['reset', 'HEAD', '--', 'file.txt']);
+    const unstaged = await readRepositoryChangeSignature(repo);
+
+    expect(staged.signature).toBe(before.signature);
+    expect(unstaged.signature).toBe(before.signature);
+  });
+});
+
+test('readRepositoryChangeSignature ignores staging and unstaging renamed files', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'old.txt', 'one\n');
+    await commitAll(repo, 'initial commit');
+    await git(repo, ['mv', 'old.txt', 'new.txt']);
+    await git(repo, ['reset', 'HEAD', '--', 'old.txt', 'new.txt']);
+
+    const before = await readRepositoryChangeSignature(repo);
+    await git(repo, ['add', '--all']);
+    const staged = await readRepositoryChangeSignature(repo);
+    await git(repo, ['reset', 'HEAD', '--', 'old.txt', 'new.txt']);
+    const unstaged = await readRepositoryChangeSignature(repo);
+
+    expect(staged.signature).toBe(before.signature);
+    expect(unstaged.signature).toBe(before.signature);
+  });
+});
+
+test('readRepositoryChangeSignature changes when a commit is made', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'one\n');
+    await commitAll(repo, 'initial commit');
+    await writeRepoFile(repo, 'file.txt', 'two changed\n');
+
+    const before = await readRepositoryChangeSignature(repo);
+    await commitAll(repo, 'second commit');
     const after = await readRepositoryChangeSignature(repo);
 
     expect(after.signature).not.toBe(before.signature);

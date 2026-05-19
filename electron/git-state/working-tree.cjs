@@ -183,30 +183,56 @@ const readDiffSectionContent = async (launchPath, request) => {
   });
 };
 
-/** @param {string} repoRoot */
-const readUntrackedFileSignatures = async (repoRoot) => {
-  const raw = await git(repoRoot, [
-    'ls-files',
-    '--others',
-    '--exclude-standard',
-    '--directory',
-    '-z',
-    '--',
-    '.',
-  ]);
-  const paths = raw.split('\0').filter(Boolean).sort();
-  const signatures = [];
+/** @param {string} repoRoot @param {string} path */
+const readWorkingTreePathSignature = async (repoRoot, path) => {
+  try {
+    const absolutePath = join(repoRoot, path);
+    const stat = await fs.lstat(absolutePath);
 
-  for (const path of paths) {
-    try {
-      const stat = await fs.lstat(join(repoRoot, path));
-      signatures.push(`${path}\0${stat.size}\0${stat.mtimeMs}\0${stat.mode}`);
-    } catch {
-      signatures.push(`${path}\0missing`);
+    if (stat.isDirectory()) {
+      return `${path}\0directory\0${stat.mode}\0${stat.size}\0${stat.mtimeMs}`;
     }
+
+    if (stat.isSymbolicLink()) {
+      return `${path}\0symlink\0${stat.mode}\0${await fs.readlink(absolutePath)}`;
+    }
+
+    if (!stat.isFile()) {
+      return `${path}\0other\0${stat.mode}\0${stat.size}\0${stat.mtimeMs}`;
+    }
+
+    const content =
+      stat.size <= 64 * 1024 * 1024
+        ? getFingerprint(await fs.readFile(absolutePath))
+        : `${stat.size}\0${stat.mtimeMs}`;
+
+    return `${path}\0file\0${stat.mode}\0${stat.size}\0${content}`;
+  } catch {
+    return `${path}\0missing`;
+  }
+};
+
+/** @param {string} repoRoot */
+const readWorkingTreeChangeSignatures = async (repoRoot) => {
+  const status = parseStatus(await git(repoRoot, ['status', '--porcelain=v1', '-z', '-uall']));
+  const signatures = new Map();
+
+  for (const item of status) {
+    if (
+      item.oldPath &&
+      item.oldPath !== item.path &&
+      !(await readFileStat(repoRoot, item.oldPath))
+    ) {
+      signatures.set(item.oldPath, `${item.oldPath}\0missing`);
+    }
+
+    signatures.set(item.path, await readWorkingTreePathSignature(repoRoot, item.path));
   }
 
-  return signatures.join('\0');
+  return [...signatures.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, signature]) => signature)
+    .join('\0');
 };
 
 /** @param {string} repoRoot @param {ReadonlyArray<string>} args */
@@ -239,17 +265,14 @@ const readGitIdentity = async (launchPath) => {
 /** @param {string} launchPath */
 const readRepositoryChangeSignature = async (launchPath) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
-  const [head, status, stagedDiff, unstagedDiff, untracked] = await Promise.all([
+  const [head, workingTree] = await Promise.all([
     gitOrEmpty(repoRoot, ['rev-parse', '--verify', 'HEAD']),
-    git(repoRoot, ['status', '--branch', '--porcelain=v1', '-z', '-uno']),
-    gitOrEmpty(repoRoot, ['diff', '--cached', '--binary', '--no-ext-diff']),
-    gitOrEmpty(repoRoot, ['diff', '--binary', '--no-ext-diff']),
-    readUntrackedFileSignatures(repoRoot),
+    readWorkingTreeChangeSignatures(repoRoot),
   ]);
 
   return {
     root: repoRoot,
-    signature: getFingerprint([head, status, stagedDiff, unstagedDiff, untracked].join('\0')),
+    signature: getFingerprint([head, workingTree].join('\0')),
   };
 };
 
@@ -259,6 +282,5 @@ module.exports = {
   readDiffSectionContent,
   readGitIdentity,
   readRepositoryChangeSignature,
-  readUntrackedFileSignatures,
   readWorkingTreeState,
 };
