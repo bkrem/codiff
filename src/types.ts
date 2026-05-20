@@ -53,7 +53,9 @@ export type ReviewSource =
     };
 
 export type HistoryEntry = {
+  author: string;
   committedAt: number;
+  gravatarUrl?: string;
   parents: ReadonlyArray<string>;
   ref: string;
   subject: string;
@@ -65,6 +67,7 @@ export type RepositoryHistory = {
 };
 
 export type RepositoryState = {
+  branch: string | null;
   files: ReadonlyArray<ChangedFile>;
   generatedAt: number;
   launchPath: string;

@@ -1,6 +1,8 @@
 import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
 import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from 'react';
+import { matchesShortcut } from '../../config/keymap.ts';
+import type { CodiffKeymap } from '../../config/types.ts';
 import type {
   DiffLineCount,
   PullRequestSource,
@@ -20,6 +22,7 @@ import { renderInlineMarkdown } from '../../lib/markdown.tsx';
 import { getShortRef, getSourceKey } from '../../lib/source.ts';
 import { walkthroughActionLabel, walkthroughImpactLabel } from '../../lib/walkthrough.ts';
 import type { ChangedFile, HistoryEntry, ReviewSource, Walkthrough } from '../../types.ts';
+import { Gravatar } from './Gravatar.tsx';
 
 export function Sidebar({
   currentSource,
@@ -27,6 +30,7 @@ export function Sidebar({
   historyEntries,
   historyHasMore,
   historyLoading,
+  keymap,
   mode,
   onActivatePath,
   onLoadMoreHistory,
@@ -50,6 +54,7 @@ export function Sidebar({
   historyEntries: ReadonlyArray<HistoryEntry>;
   historyHasMore: boolean;
   historyLoading: boolean;
+  keymap: CodiffKeymap;
   mode: SidebarMode;
   onActivatePath: (path: string) => void;
   onLoadMoreHistory: () => void;
@@ -204,11 +209,7 @@ export function Sidebar({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        !isNativeInputTarget(event.target) &&
-        (event.metaKey || event.ctrlKey) &&
-        event.key.toLowerCase() === 'p'
-      ) {
+      if (!isNativeInputTarget(event.target) && matchesShortcut(event, keymap, 'fileFilter')) {
         event.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
@@ -217,7 +218,7 @@ export function Sidebar({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [keymap]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -330,6 +331,30 @@ export function Sidebar({
   );
 }
 
+const shortDate = (timestamp: number) => {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) {
+    return 'just now';
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 30) {
+    return `${days}d ago`;
+  }
+  const months = Math.floor(days / 30);
+  if (months < 12) {
+    return `${months}mo ago`;
+  }
+  return `${Math.floor(months / 12)}y ago`;
+};
+
 function HistorySidebar({
   currentSource,
   entries,
@@ -357,7 +382,9 @@ function HistorySidebar({
       [
         pullRequestSource
           ? {
+              author: null,
               committedAt: null,
+              gravatarUrl: undefined,
               key: getSourceKey(pullRequestSource),
               ref: pullRequestSource.number ? `PR #${pullRequestSource.number}` : 'PR',
               source: pullRequestSource satisfies ReviewSource,
@@ -365,14 +392,18 @@ function HistorySidebar({
             }
           : null,
         {
+          author: null,
           committedAt: null,
+          gravatarUrl: undefined,
           key: 'working-tree',
           ref: '',
           source: { type: 'working-tree' } satisfies ReviewSource,
           subject: 'Uncommitted',
         },
         ...entries.map((entry) => ({
+          author: entry.author,
           committedAt: entry.committedAt,
+          gravatarUrl: entry.gravatarUrl,
           key: `commit:${entry.ref}`,
           ref: entry.ref,
           source: { ref: entry.ref, type: 'commit' } satisfies ReviewSource,
@@ -407,9 +438,10 @@ function HistorySidebar({
     <div className="history-list" onScroll={maybeLoadMore} ref={listRef}>
       {visibleRows.map((row) => {
         const selected = row.key === currentSourceKey;
+        const hasMetadata = Boolean(row.author && row.committedAt);
         return (
           <button
-            className={`history-entry${selected ? ' selected' : ''}`}
+            className={`history-entry${selected ? ' selected' : ''}${hasMetadata ? ' with-metadata' : ''}`}
             key={row.key}
             onClick={() => onSelectSource(row.source)}
             title={row.subject}
@@ -423,6 +455,15 @@ function HistorySidebar({
                   : 'local'}
             </span>
             <span className="history-entry-subject">{row.subject}</span>
+            {hasMetadata ? (
+              <span className="history-entry-meta">
+                <span className="history-entry-author">
+                  <Gravatar fallback={row.author || '?'} size="small" url={row.gravatarUrl} />
+                  <span>{row.author}</span>
+                </span>
+                <span>{shortDate(row.committedAt || 0)}</span>
+              </span>
+            ) : null}
           </button>
         );
       })}

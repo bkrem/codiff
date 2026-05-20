@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { CommandBar } from './app/components/CommandBar.tsx';
 import {
   CopyCommentsButton,
   CodexUnavailablePanel,
@@ -18,6 +19,9 @@ import {
 } from './app/components/Panels.tsx';
 import { ReviewCodeView } from './app/components/ReviewCodeView.tsx';
 import { Sidebar } from './app/components/Sidebar.tsx';
+import { defaultConfig } from './config/defaults.ts';
+import { getShortcutLabel, matchesShortcut } from './config/keymap.ts';
+import type { CodiffConfig } from './config/types.ts';
 import {
   defaultLaunchOptions,
   defaultPreferences,
@@ -35,17 +39,24 @@ import {
   type WalkthroughError,
 } from './lib/app-types.ts';
 import { DEFAULT_PADDING } from './lib/code-view-options.ts';
+import { type Command, createCommandRegistry } from './lib/command-registry.ts';
 import { getDiffSearchResult } from './lib/diff-search.ts';
 import { fileHasVisibleDiff, getFirstVisibleSection, getItemId } from './lib/diff.ts';
 import { compactPath, fuzzyMatches, sortFiles } from './lib/files.ts';
-import { isDiffSearchShortcut } from './lib/keyboard.ts';
 import {
   buildReviewCommentsMarkdown,
   getCommentKey,
   getReviewCommentRangeProps,
   getReviewCommentsFromState,
 } from './lib/review-comments.ts';
-import { clampSidebarWidth, readSidebarWidth, writeSidebarWidth } from './lib/sidebar-width.ts';
+import {
+  SIDEBAR_COLLAPSE_THRESHOLD,
+  clampSidebarWidth,
+  readSidebarCollapsed,
+  readSidebarWidth,
+  writeSidebarCollapsed,
+  writeSidebarWidth,
+} from './lib/sidebar-width.ts';
 import { getRepositoryLoadError, getShortRef, getSourceKey, getSourceLabel } from './lib/source.ts';
 import { readViewed, writeViewed } from './lib/viewed.ts';
 import {
@@ -86,6 +97,7 @@ export default function App() {
   const [itemVersionByPath, setItemVersionByPath] = useState<Record<string, number>>({});
   const [localChangesDetected, setLocalChangesDetected] = useState(false);
   const [launchOptions, setLaunchOptions] = useState<CodiffLaunchOptions>(defaultLaunchOptions);
+  const [codiffConfig, setCodiffConfig] = useState<CodiffConfig>(defaultConfig);
   const [preferences, setPreferences] = useState<CodiffPreferences>(defaultPreferences);
   const [reviewComments, setReviewComments] = useState<ReadonlyArray<ReviewComment>>([]);
   const [pullRequestReviewSubmitting, setPullRequestReviewSubmitting] =
@@ -95,6 +107,7 @@ export default function App() {
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [pendingSource, setPendingSource] = useState<ReviewSource | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => readSidebarCollapsed());
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('tree');
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => readSidebarWidth());
   const [state, setState] = useState<RepositoryState | null>(null);
@@ -122,6 +135,9 @@ export default function App() {
   const viewedRef = useRef<Record<string, string>>({});
   const walkthroughRef = useRef<Walkthrough | null>(null);
   const walkthroughErrorRef = useRef<WalkthroughError | null>(null);
+  const [commandBarVisible, setCommandBarVisible] = useState(false);
+  const [commandBarCommands, setCommandBarCommands] = useState<ReadonlyArray<Command>>([]);
+  const commandRegistryRef = useRef(createCommandRegistry());
 
   const bumpItemVersion = useCallback((path: string) => {
     setItemVersionByPath((current) => ({
@@ -533,19 +549,33 @@ export default function App() {
   useEffect(() => {
     let canceled = false;
 
-    window.codiff.getPreferences().then((nextPreferences) => {
+    window.codiff.getConfig().then((nextConfig) => {
       if (!canceled) {
-        setPreferences(nextPreferences);
+        setCodiffConfig(nextConfig);
+        setPreferences({
+          copyCommentsOnClose: nextConfig.settings.copyCommentsOnClose,
+          lastRepositoryPath: nextConfig.settings.lastRepositoryPath,
+          openAIModel: nextConfig.settings.openAIModel,
+          showWhitespace: nextConfig.settings.showWhitespace,
+          theme: nextConfig.settings.theme,
+        });
       }
     });
 
-    const removeListener = window.codiff.onPreferencesChanged((nextPreferences) => {
-      setPreferences(nextPreferences);
+    const removeConfigListener = window.codiff.onConfigChanged((nextConfig) => {
+      setCodiffConfig(nextConfig);
+      setPreferences({
+        copyCommentsOnClose: nextConfig.settings.copyCommentsOnClose,
+        lastRepositoryPath: nextConfig.settings.lastRepositoryPath,
+        openAIModel: nextConfig.settings.openAIModel,
+        showWhitespace: nextConfig.settings.showWhitespace,
+        theme: nextConfig.settings.theme,
+      });
     });
 
     return () => {
       canceled = true;
-      removeListener();
+      removeConfigListener();
     };
   }, []);
 
@@ -686,17 +716,53 @@ export default function App() {
     setActiveDiffSearchMatchIndex(0);
   }, []);
 
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      writeSidebarCollapsed(next);
+      return next;
+    });
+  }, []);
+
+  const expandSidebar = useCallback(() => {
+    setSidebarCollapsed(false);
+    writeSidebarCollapsed(false);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isDiffSearchShortcut(event)) {
+      if (matchesShortcut(event, codiffConfig.keymap, 'commandBar')) {
+        event.preventDefault();
+        setCommandBarVisible((current) => !current);
+        return;
+      }
+      if (matchesShortcut(event, codiffConfig.keymap, 'toggleSidebar')) {
+        event.preventDefault();
+        toggleSidebar();
+        return;
+      }
+      if (matchesShortcut(event, codiffConfig.keymap, 'diffSearch')) {
         event.preventDefault();
         openDiffSearch();
+        return;
+      }
+      if (matchesShortcut(event, codiffConfig.keymap, 'fileFilter')) {
+        if (sidebarCollapsed) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          expandSidebar();
+          requestAnimationFrame(() => {
+            const input = document.querySelector<HTMLInputElement>('.sidebar-search');
+            input?.focus();
+            input?.select();
+          });
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openDiffSearch]);
+  }, [codiffConfig.keymap, expandSidebar, openDiffSearch, sidebarCollapsed, toggleSidebar]);
 
   useEffect(() => window.codiff.onFindInDiffs(openDiffSearch), [openDiffSearch]);
 
@@ -865,22 +931,38 @@ export default function App() {
     handle.setPointerCapture(event.pointerId);
     handle.classList.add('dragging');
     document.body.style.cursor = 'col-resize';
+    let collapsed = false;
 
-    const handleMove = (moveEvent: PointerEvent) => {
-      setSidebarWidth(clampSidebarWidth(moveEvent.clientX - shellLeft));
-    };
-
-    const handleEnd = () => {
+    const cleanup = () => {
       handle.releasePointerCapture(event.pointerId);
       handle.removeEventListener('pointermove', handleMove);
       handle.removeEventListener('pointerup', handleEnd);
       handle.removeEventListener('pointercancel', handleEnd);
       handle.classList.remove('dragging');
       document.body.style.cursor = '';
-      setSidebarWidth((width) => {
-        writeSidebarWidth(width);
-        return width;
-      });
+    };
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const rawWidth = moveEvent.clientX - shellLeft;
+      if (rawWidth < SIDEBAR_COLLAPSE_THRESHOLD) {
+        // Collapse immediately mid-drag — no resistance, no snap on release
+        collapsed = true;
+        setSidebarCollapsed(true);
+        writeSidebarCollapsed(true);
+        cleanup();
+        return;
+      }
+      setSidebarWidth(clampSidebarWidth(rawWidth));
+    };
+
+    const handleEnd = () => {
+      cleanup();
+      if (!collapsed) {
+        setSidebarWidth((width) => {
+          writeSidebarWidth(width);
+          return width;
+        });
+      }
     };
 
     handle.addEventListener('pointermove', handleMove);
@@ -957,6 +1039,166 @@ export default function App() {
     },
     [state, walkthrough, walkthroughLoading],
   );
+
+  useEffect(() => {
+    const registry = commandRegistryRef.current;
+    const unregisterFns = [
+      registry.register({
+        execute: () => {
+          expandSidebar();
+          requestAnimationFrame(() => {
+            const input = document.querySelector<HTMLInputElement>('.sidebar-search');
+            input?.focus();
+            input?.select();
+          });
+        },
+        id: 'file-filter',
+        keymapAction: 'fileFilter',
+        title: 'Focus File Filter',
+      }),
+      registry.register({
+        execute: openDiffSearch,
+        id: 'diff-search',
+        keymapAction: 'diffSearch',
+        title: 'Find in Diffs',
+      }),
+      registry.register({
+        execute: () => changeSidebarMode('tree'),
+        id: 'sidebar-tree',
+        title: 'Show File Tree',
+      }),
+      registry.register({
+        execute: () => changeSidebarMode('history'),
+        id: 'sidebar-history',
+        title: 'Show History',
+      }),
+      registry.register({
+        execute: () => changeSidebarMode('walkthrough'),
+        id: 'sidebar-walkthrough',
+        title: 'Show Walkthrough',
+      }),
+      registry.register({
+        execute: () => {
+          const currentState = stateRef.current;
+          if (!currentState) {
+            return;
+          }
+
+          const markdown = buildReviewCommentsMarkdown(
+            currentState.files,
+            reviewCommentsRef.current,
+            preferencesRef.current.showWhitespace,
+          );
+          if (markdown) {
+            void navigator.clipboard.writeText(markdown);
+          }
+        },
+        id: 'copy-comments',
+        title: 'Copy Review Comments',
+      }),
+      registry.register({
+        execute: () => {
+          const currentState = stateRef.current;
+          if (!currentState) {
+            return;
+          }
+
+          const markdown = buildReviewCommentsMarkdown(
+            currentState.files,
+            reviewCommentsRef.current,
+            preferencesRef.current.showWhitespace,
+          );
+          if (markdown) {
+            void navigator.clipboard.writeText(markdown).then(() => {
+              window.close();
+            });
+          } else {
+            window.close();
+          }
+        },
+        id: 'copy-comments-and-close',
+        title: 'Copy Review Comments and Close',
+      }),
+      registry.register({
+        description: () => selectedPathRef.current,
+        execute: () => {
+          const currentState = stateRef.current;
+          const path = selectedPathRef.current;
+          if (!currentState || !path) {
+            return;
+          }
+
+          const file = currentState.files.find((f) => f.path === path);
+          if (!file) {
+            return;
+          }
+
+          const isViewed = viewedRef.current[file.path] === file.fingerprint;
+          setViewed((current) => {
+            if (isViewed) {
+              const next = { ...current };
+              delete next[file.path];
+              if (currentState.source.type === 'working-tree') {
+                writeViewed(currentState.root, next);
+              }
+              return next;
+            }
+
+            const next = {
+              ...current,
+              [file.path]: file.fingerprint,
+            };
+            if (currentState.source.type === 'working-tree') {
+              writeViewed(currentState.root, next);
+            }
+            return next;
+          });
+
+          setCollapsed((current) => {
+            const next = new Set(current);
+            if (isViewed) {
+              next.delete(file.path);
+            } else {
+              next.add(file.path);
+            }
+            return next;
+          });
+          bumpItemVersion(file.path);
+        },
+        id: 'toggle-viewed',
+        title: 'Toggle Viewed',
+      }),
+      registry.register({
+        description: () => selectedPathRef.current,
+        execute: () => {
+          const path = selectedPathRef.current;
+          if (path) {
+            void window.codiff.openFile(path).catch(() => {});
+          }
+        },
+        id: 'open-file',
+        title: 'Open File in Editor',
+      }),
+      registry.register({
+        execute: toggleSidebar,
+        id: 'toggle-sidebar',
+        keymapAction: 'toggleSidebar',
+        title: 'Toggle Sidebar',
+      }),
+      registry.register({
+        execute: () => window.location.reload(),
+        id: 'reload',
+        title: 'Reload Window',
+      }),
+    ];
+    setCommandBarCommands(registry.commands);
+
+    return () => {
+      for (const unregister of unregisterFns) {
+        unregister();
+      }
+    };
+  }, [bumpItemVersion, changeSidebarMode, expandSidebar, openDiffSearch, toggleSidebar]);
 
   const toggleCollapsed = useCallback(
     (file: ChangedFile, isCollapsed: boolean) => {
@@ -1379,18 +1621,56 @@ export default function App() {
     !walkthroughLoading &&
     walkthroughError?.code === 'CODEX_NOT_FOUND';
 
+  const sidebarLabel = `${compactPath(state.root)}${state.branch ? ` (${state.branch})` : ''}`;
+  const sidebarSourceLabel =
+    state.source.type !== 'working-tree' ? ` · ${getSourceLabel(state.source)}` : '';
+
   return (
     <div
-      className="app-shell"
-      style={{ gridTemplateColumns: `${sidebarWidth}px 6px minmax(0, 1fr)` }}
+      className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
+      style={
+        sidebarCollapsed
+          ? undefined
+          : { gridTemplateColumns: `${sidebarWidth}px 6px minmax(0, 1fr)` }
+      }
     >
       <div aria-hidden className="window-drag-region" />
+      {sidebarCollapsed ? (
+        <div className="collapsed-sidebar-bar">
+          <button
+            className="sidebar-toggle-button"
+            onClick={expandSidebar}
+            title={`Expand sidebar (${getShortcutLabel(codiffConfig.keymap, 'toggleSidebar')})`}
+            type="button"
+          >
+            <svg
+              aria-hidden
+              fill="none"
+              height="16"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              width="16"
+            >
+              <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+              <line x1="9" x2="9" y1="3" y2="21" />
+            </svg>
+          </button>
+          <div className="collapsed-sidebar-label" title={state.root}>
+            {sidebarLabel}
+            {sidebarSourceLabel}
+          </div>
+        </div>
+      ) : null}
       <RepositoryChangeBanner
         visible={localChangesDetected && (pendingSource ?? state.source).type === 'working-tree'}
       />
       <DiffSearchPanel
         activeIndex={effectiveActiveDiffSearchMatchIndex}
         focusRequest={diffSearchFocusRequest}
+        keymap={codiffConfig.keymap}
         matchCount={diffSearchMatches.length}
         onChange={updateDiffSearchQuery}
         onClose={closeDiffSearch}
@@ -1398,6 +1678,12 @@ export default function App() {
         onPrevious={() => moveDiffSearchMatch(-1)}
         query={diffSearchQuery}
         visible={diffSearchVisible}
+      />
+      <CommandBar
+        commands={commandBarCommands}
+        keymap={codiffConfig.keymap}
+        onClose={() => setCommandBarVisible(false)}
+        visible={commandBarVisible}
       />
       {!isSwitchingSource ? (
         <div className="review-action-bar">
@@ -1418,9 +1704,30 @@ export default function App() {
       <aside className="squircle sidebar">
         <div className="sidebar-header">
           <div className="sidebar-path-row">
+            <button
+              className="sidebar-toggle-button"
+              onClick={toggleSidebar}
+              title={`Collapse sidebar (${getShortcutLabel(codiffConfig.keymap, 'toggleSidebar')})`}
+              type="button"
+            >
+              <svg
+                aria-hidden
+                fill="none"
+                height="16"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                width="16"
+              >
+                <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+                <line x1="9" x2="9" y1="3" y2="21" />
+              </svg>
+            </button>
             <div className="sidebar-path" title={state.root}>
-              {compactPath(state.root)}
-              {state.source.type !== 'working-tree' ? ` · ${getSourceLabel(state.source)}` : ''}
+              {sidebarLabel}
+              {sidebarSourceLabel}
             </div>
           </div>
         </div>
@@ -1430,6 +1737,7 @@ export default function App() {
           historyEntries={historyEntries}
           historyHasMore={historyHasMore}
           historyLoading={historyLoading}
+          keymap={codiffConfig.keymap}
           mode={sidebarMode}
           onActivatePath={activatePath}
           onLoadMoreHistory={loadMoreHistory}
@@ -1495,6 +1803,7 @@ export default function App() {
             gitIdentity={gitIdentity}
             isPullRequest={isPullRequest}
             itemVersionByPath={itemVersionByPath}
+            keymap={codiffConfig.keymap}
             onAskCodex={askCodex}
             onCreateComment={createComment}
             onDeleteComment={deleteComment}

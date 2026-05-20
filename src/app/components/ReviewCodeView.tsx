@@ -15,8 +15,11 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import codexIconUrl from '../../assets/codex.svg';
+import { matchesShortcut } from '../../config/keymap.ts';
+import type { CodiffKeymap } from '../../config/types.ts';
 import type {
   CodeViewInstance,
   CodeViewItemMetadata,
@@ -62,7 +65,58 @@ import type {
   GitIdentity,
   PullRequestExistingReviewComment,
 } from '../../types.ts';
+import { Gravatar } from './Gravatar.tsx';
 import { DiffLineCountBadge } from './Sidebar.tsx';
+
+function CopyFilePathButton({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current != null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleClick = useCallback(
+    async (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      await navigator.clipboard.writeText(path);
+      setCopied(true);
+      if (copiedTimerRef.current != null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+      copiedTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copiedTimerRef.current = null;
+      }, 1600);
+    },
+    [path],
+  );
+
+  return (
+    <button
+      aria-label={copied ? 'Path copied' : 'Copy file path'}
+      className={`codiff-copy-path-button${copied ? ' copied' : ''}`}
+      onClick={(event) => void handleClick(event)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.stopPropagation();
+        }
+      }}
+      title={copied ? 'Path copied' : 'Copy file path'}
+      type="button"
+    >
+      <span
+        aria-hidden
+        className={copied ? 'codiff-copy-path-icon check' : 'codiff-copy-path-icon'}
+      />
+    </button>
+  );
+}
 
 function CodeViewHeader({
   meta,
@@ -97,19 +151,29 @@ function CodeViewHeader({
         isCollapsed ? ' collapsed' : ''
       }${isSelected ? ' selected' : ''}${isViewed ? ' viewed' : ''}`}
     >
-      <button
+      <div
         aria-expanded={!isCollapsed}
         aria-label={isCollapsed ? 'Expand file' : 'Collapse file'}
         className="codiff-header-toggle"
         onClick={() => onToggleCollapsed(file, isCollapsed)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggleCollapsed(file, isCollapsed);
+          }
+        }}
+        role="button"
+        tabIndex={0}
         title={isCollapsed ? 'Expand' : 'Collapse'}
-        type="button"
       >
         <span className="codiff-chevron-box">
           <span className={isCollapsed ? 'codiff-chevron collapsed' : 'codiff-chevron'} />
         </span>
         <span className="codiff-file-heading">
-          <span className="codiff-file-path">{file.path}</span>
+          <span className="codiff-file-path-row">
+            <span className="codiff-file-path">{file.path}</span>
+            <CopyFilePathButton path={file.path} />
+          </span>
           {file.oldPath ? <span className="codiff-file-old-path">{file.oldPath}</span> : null}
           {walkthroughNote ? (
             <span className="codiff-file-note">{walkthroughNote.reason}</span>
@@ -120,7 +184,7 @@ function CodeViewHeader({
             {sectionLabel[section.kind]}
           </span>
         ) : null}
-      </button>
+      </div>
       <DiffLineCountBadge lineCount={lineCount} />
       <div className={`codiff-status-badge ${file.status}`}>{statusLabel[file.status]}</div>
       {canRenderMarkdown ? (
@@ -166,18 +230,12 @@ function ReviewAvatar({
   const label = author?.login || identity?.name || identity?.email || 'Git user';
   const avatarUrl = author?.avatarUrl || identity?.gravatarUrl;
 
-  return avatarUrl ? (
-    <img alt="" className="review-comment-avatar" draggable={false} src={avatarUrl} />
-  ) : (
-    <span aria-hidden className="review-comment-avatar fallback">
-      {label.trim()[0]?.toUpperCase() ?? '?'}
-    </span>
-  );
+  return <Gravatar fallback={label} size="medium" url={avatarUrl} />;
 }
 
 function CodexAvatar() {
   return (
-    <img alt="" className="review-comment-avatar codex" draggable={false} src={codexIconUrl} />
+    <img alt="" className="review-comment-avatar-codex" draggable={false} src={codexIconUrl} />
   );
 }
 
@@ -223,6 +281,7 @@ function ReviewAnnotation({
   focusCommentRequest,
   identity,
   isPullRequest,
+  keymap,
   onAskCodex,
   onCommentBlur,
   onCommentFocus,
@@ -236,6 +295,7 @@ function ReviewAnnotation({
   focusCommentRequest: number;
   identity: GitIdentity | null;
   isPullRequest: boolean;
+  keymap: CodiffKeymap;
   onAskCodex: (commentId: string) => void;
   onCommentBlur: (comment: ReviewComment, body: string) => void;
   onCommentFocus: (comment: ReviewComment) => void;
@@ -258,7 +318,7 @@ function ReviewAnnotation({
 
   const handleCommentKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>, comment: ReviewComment) => {
-      if (event.key === 'Enter' && event.metaKey && !event.shiftKey) {
+      if (matchesShortcut(event, keymap, 'submitComment')) {
         if (isPullRequest && canSubmitCommentToGitHub(comment)) {
           event.preventDefault();
           event.stopPropagation();
@@ -274,7 +334,7 @@ function ReviewAnnotation({
         return;
       }
 
-      if (event.key !== 'Escape') {
+      if (!matchesShortcut(event, keymap, 'discardComment')) {
         return;
       }
 
@@ -289,7 +349,7 @@ function ReviewAnnotation({
         onDeleteComment(comment.id);
       }
     },
-    [isPullRequest, onAskCodex, onDeleteComment, onSubmitComment],
+    [isPullRequest, keymap, onAskCodex, onDeleteComment, onSubmitComment],
   );
 
   if (annotationComments.length === 0) {
@@ -412,6 +472,7 @@ export function ReviewCodeView({
   gitIdentity,
   isPullRequest,
   itemVersionByPath,
+  keymap,
   onAskCodex,
   onCreateComment,
   onDeleteComment,
@@ -438,6 +499,7 @@ export function ReviewCodeView({
   gitIdentity: GitIdentity | null;
   isPullRequest: boolean;
   itemVersionByPath: Readonly<Record<string, number>>;
+  keymap: CodiffKeymap;
   onAskCodex: (commentId: string) => void;
   onCreateComment: (comment: Omit<ReviewComment, 'body' | 'id'>) => void;
   onDeleteComment: (commentId: string) => void;
@@ -1009,6 +1071,7 @@ export function ReviewCodeView({
           focusCommentRequest={focusCommentRequest}
           identity={gitIdentity}
           isPullRequest={isPullRequest}
+          keymap={keymap}
           onAskCodex={onAskCodex}
           onCommentBlur={blurComment}
           onCommentFocus={focusComment}
@@ -1027,6 +1090,7 @@ export function ReviewCodeView({
       focusComment,
       gitIdentity,
       isPullRequest,
+      keymap,
       markMarkdownPreviewLayoutReady,
       onAskCodex,
       onSubmitComment,
