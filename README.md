@@ -49,6 +49,60 @@ codiff -w a1b2c3d
 
 Launching Codiff in multiple repositories opens a separate native window for each repository.
 
+## Command Bar
+
+Open the command bar with <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> on macOS, or
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> on other platforms. Type to filter commands, use
+<kbd>Up</kbd>/<kbd>Down</kbd> to move through results, press <kbd>Enter</kbd> to run the selected
+command, and press <kbd>Esc</kbd> to close it.
+
+The command bar includes actions for common review workflows:
+
+- Focus File Filter
+- Find in Diffs
+- Show File Tree, Show History, and Show Walkthrough
+- Copy Review Comments
+- Copy Review Comments and Close
+- Toggle Viewed for the currently selected file
+- Open the currently selected file in your editor
+- Toggle Sidebar
+- Reload Window
+
+## Configuration
+
+Codiff reads configuration from `~/.codiff/codiff.jsonc`. Open `Codiff > Open Config File...` to
+create the file with defaults and open it in your editor. The file supports JSONC comments and
+trailing commas, includes a JSON schema reference for editor completion, and is watched while Codiff
+is running so changes apply to open windows.
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/nkzw-tech/codiff/main/src/config/codiff-config.schema.json",
+  "settings": {
+    "copyCommentsOnClose": false,
+    "lastRepositoryPath": "",
+    "openAIModel": "gpt-5.3-codex-spark",
+    "showWhitespace": false,
+    "theme": "system",
+  },
+  "keymap": {
+    "commandBar": "Mod+Shift+p",
+    "diffSearch": "Mod+f",
+    "fileFilter": "Mod+p",
+    "nextSearchMatch": "Enter",
+    "prevSearchMatch": "Shift+Enter",
+    "closeSearch": "Escape",
+    "submitComment": "Mod+Enter",
+    "discardComment": "Escape",
+    "toggleSidebar": "Mod+b",
+  },
+}
+```
+
+Use `Mod` for <kbd>Cmd</kbd> on macOS and <kbd>Ctrl</kbd> on other platforms. Shortcut strings can
+combine `Mod`, `Ctrl`, `Alt`, `Shift`, or `Meta` with a key, for example `Mod+Shift+p` or
+`Alt+Enter`.
+
 ## Codex Walkthroughs
 
 Codiff uses the local Codex CLI for walkthroughs and inline review assistance. Install Codex and
