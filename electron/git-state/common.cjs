@@ -32,7 +32,7 @@ const execFileAsync = promisify(execFile);
  *   unstaged: boolean;
  *   untracked: boolean;
  * }} StatusItem
- * @typedef {{force?: boolean}} ReadFileOptions
+ * @typedef {{force?: boolean; patch?: {binary: boolean; patch: string}; patchOnly?: boolean}} ReadFileOptions
  * @typedef {{number: number; owner: string; repo: string; url: string}} PullRequestReference
  * @typedef {{owner: string; repo: string}} GitHubRemote
  * @typedef {{filename: string; patch?: string; previous_filename?: string; status: string}} GitHubPullRequestFile
@@ -617,8 +617,34 @@ const getWorkingTreeContents = async (repoRoot, item, kind, options = {}) => {
  * @returns {Promise<DiffSection>}
  */
 const createSection = async (repoRoot, item, kind, options = {}) => {
-  const contents = await getWorkingTreeContents(repoRoot, item, kind, options);
   const id = `${item.path}:${kind}`;
+
+  if (options.patchOnly && !item.untracked) {
+    const patch = options.patch ?? (await getPatch(repoRoot, item.path, kind));
+
+    if (patch.binary) {
+      return {
+        binary: true,
+        id,
+        kind,
+        loadState: 'binary',
+        patch: '',
+        summary: createSummary('Binary file changed.', {
+          canLoad: false,
+        }),
+      };
+    }
+
+    return {
+      binary: false,
+      id,
+      kind,
+      loadState: 'ready',
+      patch: patch.patch,
+    };
+  }
+
+  const contents = await getWorkingTreeContents(repoRoot, item, kind, options);
 
   if (contents.loadState !== 'ready') {
     return {

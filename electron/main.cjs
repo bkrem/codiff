@@ -70,6 +70,8 @@ const windowIdentities = new Map();
 const windowRepositories = new Map();
 /** @type {Map<number, CodiffLaunchOptions>} */
 const windowLaunchOptions = new Map();
+/** @type {Map<number, Promise<RepositoryState>>} */
+const windowInitialRepositoryStates = new Map();
 const pendingCommentsClipboardController = createPendingCommentsClipboardController({ clipboard });
 /** @type {CodiffPreferences} */
 let preferences = {
@@ -432,6 +434,9 @@ const createWindow = (
   }
   windowRepositories.set(webContentsId, repositoryPath);
   windowLaunchOptions.set(webContentsId, launchOptions);
+  const initialRepositoryState = readRepositoryState(repositoryPath, launchOptions.source);
+  initialRepositoryState.catch(() => {});
+  windowInitialRepositoryStates.set(webContentsId, initialRepositoryState);
   if (!launchOptions.source) {
     startRepositoryWatcher(window, repositoryPath);
   }
@@ -463,6 +468,7 @@ const createWindow = (
     }
     repositoryWatchers.delete(webContentsId);
     windowIdentities.delete(webContentsId);
+    windowInitialRepositoryStates.delete(webContentsId);
     windowRepositories.delete(webContentsId);
     windowLaunchOptions.delete(webContentsId);
   });
@@ -582,12 +588,15 @@ if (squirrelStartup || !lock) {
 ipcMain.handle('codiff:getRepositoryState', async (event, source) => {
   const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
   const launchOptions = windowLaunchOptions.get(event.sender.id);
-  const state = await readRepositoryState(repositoryPath, source || launchOptions?.source);
+  const initialState = !source ? windowInitialRepositoryStates.get(event.sender.id) : undefined;
+  const state = initialState
+    ? await initialState
+    : await readRepositoryState(repositoryPath, source || launchOptions?.source);
   const identity = getWindowIdentityForSource(state.root, state.source);
   if (identity) {
     windowIdentities.set(event.sender.id, identity);
   }
-  await resetRepositoryWatcher(event.sender.id, repositoryPath);
+  void resetRepositoryWatcher(event.sender.id, repositoryPath);
   return state;
 });
 

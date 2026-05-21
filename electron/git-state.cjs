@@ -33,7 +33,7 @@ const readRepositoryState = async (launchPath, source = { type: 'working-tree' }
     ? readPullRequestState(launchPath, source)
     : source.type === 'commit'
       ? readCommitState(launchPath, source.ref)
-      : readWorkingTreeState(launchPath);
+      : readWorkingTreeState(launchPath, { eagerContents: false });
 
 /** @param {string} launchPath @param {DiffSectionContentRequest} request */
 const readDiffSectionContent = async (launchPath, request) =>

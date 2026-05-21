@@ -23,7 +23,120 @@ const {
  * @typedef {import('../../src/types.ts').DiffSectionContentRequest} DiffSectionContentRequest
  * @typedef {import('../../src/types.ts').RepositoryState} RepositoryState
  * @typedef {import('./common.cjs').StatusItem} StatusItem
+ * @typedef {'staged' | 'unstaged'} WorkingTreeSectionKind
  */
+
+const diffGitHeaderPattern = /^diff --git (.+)$/;
+
+/** @param {string} value */
+const unquoteGitPath = (value) => {
+  if (!value.startsWith('"')) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value.slice(1, value.endsWith('"') ? -1 : undefined);
+  }
+};
+
+/** @param {string} line */
+const splitDiffGitHeader = (line) => {
+  const match = line.match(diffGitHeaderPattern);
+  if (!match) {
+    return null;
+  }
+
+  const paths = [];
+  let index = 0;
+  const value = match[1];
+  while (index < value.length && paths.length < 2) {
+    while (value[index] === ' ') {
+      index += 1;
+    }
+
+    if (value[index] === '"') {
+      let end = index + 1;
+      let escaped = false;
+      while (end < value.length) {
+        const char = value[end];
+        if (char === '"' && !escaped) {
+          end += 1;
+          break;
+        }
+        escaped = char === '\\' && !escaped;
+        if (char !== '\\') {
+          escaped = false;
+        }
+        end += 1;
+      }
+      paths.push(unquoteGitPath(value.slice(index, end)));
+      index = end;
+      continue;
+    }
+
+    const end = value.indexOf(' ', index);
+    if (end === -1) {
+      paths.push(value.slice(index));
+      break;
+    }
+
+    paths.push(value.slice(index, end));
+    index = end + 1;
+  }
+
+  return paths.length === 2 ? paths : null;
+};
+
+/** @param {string} path */
+const stripGitDiffPrefix = (path) =>
+  path.startsWith('a/') || path.startsWith('b/') ? path.slice(2) : path;
+
+/** @param {string} path */
+const shouldEagerlyReadWorkingTreeContents = (path) => /\.md$/i.test(path);
+
+/** @param {string} rawPatch @returns {Map<string, {binary: boolean; patch: string}>} */
+const splitPatchByPath = (rawPatch) => {
+  const patches = new Map();
+  const starts = [];
+  const pattern = /^diff --git .+$/gm;
+  let match;
+
+  while ((match = pattern.exec(rawPatch))) {
+    starts.push(match.index);
+  }
+
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index];
+    const end = starts[index + 1] ?? rawPatch.length;
+    const patch = rawPatch.slice(start, end);
+    const header = patch.slice(0, patch.indexOf('\n') === -1 ? patch.length : patch.indexOf('\n'));
+    const paths = splitDiffGitHeader(header);
+    const path = paths ? stripGitDiffPrefix(paths[1]) : null;
+    if (path) {
+      patches.set(path, {
+        binary: /Binary files .* differ/.test(patch),
+        patch,
+      });
+    }
+  }
+
+  return patches;
+};
+
+/**
+ * @param {string} repoRoot
+ * @param {WorkingTreeSectionKind} kind
+ * @returns {Promise<Map<string, {binary: boolean; patch: string}>>}
+ */
+const readPatchMap = async (repoRoot, kind) => {
+  const args =
+    kind === 'staged'
+      ? ['diff', '--cached', '--patch', '--no-ext-diff']
+      : ['diff', '--patch', '--no-ext-diff'];
+  return splitPatchByPath(await git(repoRoot, args));
+};
 
 /** @param {string} repoRoot @returns {Promise<Array<StatusItem>>} */
 const listUntrackedItems = async (repoRoot) => {
@@ -92,27 +205,46 @@ const listUntrackedItems = async (repoRoot) => {
   return [...unique.values()].sort(fileSort);
 };
 
-/** @param {string} launchPath @returns {Promise<RepositoryState>} */
-const readWorkingTreeState = async (launchPath) => {
+/**
+ * @param {string} launchPath
+ * @param {{eagerContents?: boolean}} [options]
+ * @returns {Promise<RepositoryState>}
+ */
+const readWorkingTreeState = async (launchPath, options = {}) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
   const [trackedStatus, untrackedItems] = await Promise.all([
     git(repoRoot, ['status', '--porcelain=v1', '-z', '-uno']),
     listUntrackedItems(repoRoot),
   ]);
   const status = [...parseStatus(trackedStatus), ...untrackedItems].sort(fileSort);
+  const shouldUsePatchOnly = options.eagerContents === false;
+  const [stagedPatches, unstagedPatches] = shouldUsePatchOnly
+    ? await Promise.all([readPatchMap(repoRoot, 'staged'), readPatchMap(repoRoot, 'unstaged')])
+    : [new Map(), new Map()];
   /** @type {Array<ChangedFile>} */
   const files = [];
 
   for (const item of status) {
     /** @type {Array<DiffSection>} */
     const sections = [];
+    const patchOnly = shouldUsePatchOnly && !shouldEagerlyReadWorkingTreeContents(item.path);
 
     if (item.staged) {
-      sections.push(await createSection(repoRoot, item, 'staged'));
+      sections.push(
+        await createSection(repoRoot, item, 'staged', {
+          patch: stagedPatches.get(item.path),
+          patchOnly,
+        }),
+      );
     }
 
     if (item.unstaged) {
-      sections.push(await createSection(repoRoot, item, 'unstaged'));
+      sections.push(
+        await createSection(repoRoot, item, 'unstaged', {
+          patch: unstagedPatches.get(item.path),
+          patchOnly,
+        }),
+      );
     }
 
     const fingerprint = getFingerprint(
