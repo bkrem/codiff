@@ -1,6 +1,6 @@
+import { CaretDownIcon as CaretDown } from '@phosphor-icons/react/CaretDown';
 import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffKeymap } from '../../config/types.ts';
@@ -560,12 +560,14 @@ function WalkthroughSidebar({
               type="button"
             >
               <span className="walkthrough-group-title-row">
-                <ChevronDown
-                  aria-hidden
-                  className="walkthrough-group-chevron"
-                  size={14}
-                  strokeWidth={2.4}
-                />
+                <span className="walkthrough-group-chevron-box">
+                  <CaretDown
+                    aria-hidden
+                    className="walkthrough-group-chevron"
+                    size={11}
+                    weight="bold"
+                  />
+                </span>
                 <span className="walkthrough-group-title">{group.title}</span>
                 <span className="walkthrough-group-count">{group.files.length}</span>
               </span>
