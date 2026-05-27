@@ -6,14 +6,8 @@ settings:
 
 catalogs:
   default:
-    vite:
-      specifier: npm:@voidzero-dev/vite-plus-core@^0.1.22
-      version: 0.1.22
     vite-plus:
       specifier: ^0.1.22
-      version: 0.1.22
-    vitest:
-      specifier: npm:@voidzero-dev/vite-plus-test@^0.1.22
       version: 0.1.22
 
 overrides:
@@ -119,13 +113,13 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
       vite:
-        specifier: 'catalog:'
+        specifier: npm:@voidzero-dev/vite-plus-core@^0.1.22
         version: '@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.9.1)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)'
       vite-plus:
         specifier: 'catalog:'
         version: 0.1.22(@types/node@25.9.1)(@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.9.1)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3))(jiti@2.7.0)(jsdom@29.1.1)(terser@5.48.0)(typescript@6.0.3)
       vitest:
-        specifier: 'catalog:'
+        specifier: npm:@voidzero-dev/vite-plus-test@^0.1.22
         version: '@voidzero-dev/vite-plus-test@0.1.22(@types/node@25.9.1)(@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.9.1)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3))(jiti@2.7.0)(jsdom@29.1.1)(terser@5.48.0)(typescript@6.0.3)'
 
 packages:
