@@ -11,6 +11,7 @@ const iconPath = existsSync(join(__dirname, 'electron/icons/icon.icns'))
   : undefined;
 const linuxIconPath = './electron/icons/icon.png';
 const windowsIconPath = './electron/icons/icon.ico';
+const skipSquirrel = process.env.CODIFF_SKIP_SQUIRREL === '1';
 const osxNotarize =
   process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID
     ? {
@@ -49,6 +50,7 @@ module.exports = {
       config: {
         setupIcon: windowsIconPath,
       },
+      enabled: !skipSquirrel,
       name: '@electron-forge/maker-squirrel',
     },
     {
