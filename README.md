@@ -1,14 +1,15 @@
 # Codiff
 
-Codiff is a beautiful, minimal, local diff viewer for reviewing staged and unstaged Git changes before committing.
+Codiff is a beautiful, minimal, local diff viewer for reviewing Git changes and committing them.
 
-<img width="2824" height="1856" src="https://github.com/user-attachments/assets/b8cd9b57-cb7a-4d7f-8a61-9ef7f40fa6b8" />
+<img width="48%" src="https://github.com/user-attachments/assets/9801587d-5879-461a-b375-9fbfa3c5f25d" />
+<img width="48%" src="https://github.com/user-attachments/assets/8b92902b-1112-4553-ba59-74e84a61ca7d" />
 
 ## Why Codiff
 
-- **Fast Local Reviews:** See changes in any Git repository to review code before committing.
-- **LLM Walkthroughs:** Run `codiff -w` to ask Codex or Claude Code to give you a review order and more context.
-- **Inline Review Comments:** Comment directly on changed lines and copy all review comments as Markdown for follow-ups.
+- **Fast Local Reviews:** Review and commit changes in any Git repository.
+- **LLM Walkthroughs:** Run `codiff -w` to generate an optimized commit walkthrough.
+- **Inline Review Comments:** Comment directly on Pull Requests or copy review comments as Markdown for follow-ups.
 
 ## Download
 
