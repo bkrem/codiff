@@ -1463,7 +1463,7 @@ test('Pi not-found walkthrough errors show the agent recovery panel', async () =
     })),
     getNarrativeWalkthrough: vi.fn(async () => ({
       code: 'PI_NOT_FOUND' as const,
-      reason: 'Pi support could not be loaded.',
+      reason: 'Pi CLI was not found.',
       status: 'unavailable' as const,
     })),
     getRepositoryState: vi.fn(async () => ({
@@ -1483,10 +1483,10 @@ test('Pi not-found walkthrough errors show the agent recovery panel', async () =
     });
 
     await waitFor(() => {
-      expect(container.textContent).toContain('Pi support not found');
+      expect(container.textContent).toContain('Pi CLI not found');
     });
 
-    expect(container.textContent).toContain('Pi support could not be loaded.');
+    expect(container.textContent).toContain('Pi CLI was not found.');
     expect(container.textContent).toContain('Review Files');
   } finally {
     if (root) {

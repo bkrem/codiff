@@ -98,7 +98,7 @@ const createPiAgent = () => ({
   label: 'Pi',
   cliName: 'pi',
   cliPathEnvVar: 'CODIFF_PI_PATH',
-  models: pi.getCachedPiModels(),
+  models: pi.PI_MODELS,
   defaultModel: pi.DEFAULT_PI_MODEL,
   fallbackModel: pi.FALLBACK_PI_MODEL,
   modelSettingKey: 'piModel',

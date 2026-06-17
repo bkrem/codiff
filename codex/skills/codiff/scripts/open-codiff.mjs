@@ -190,6 +190,8 @@ const codiffCommand = getCodiffCommand();
 const args = [
   ...codiffCommand.args,
   '-w',
+  '--agent',
+  'codex',
   '--walkthrough-file',
   walkthroughFilePath,
   ...(threadId ? ['--codex-session', threadId] : []),

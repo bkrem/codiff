@@ -127,6 +127,16 @@ const findPiSessionIdForCwd = (cwd) => {
   return candidates[0].sessionId;
 };
 
+const getFallbackSessionCwd = () => {
+  const cwd = process.cwd();
+  const isRunningFromSourceSkill = cwd === skillRoot || cwd.startsWith(`${skillRoot}/`);
+  if (isRunningFromSourceSkill && existsSync(join(codiffRoot, 'bin/codiff.js'))) {
+    return codiffRoot;
+  }
+
+  return cwd;
+};
+
 const rawArgs = process.argv.slice(2);
 
 // `--guide`: print Codiff's current walkthrough authoring guide and exit. The
@@ -169,7 +179,7 @@ if (!walkthroughFile) {
   process.exit(1);
 }
 
-const sessionCwd = process.cwd();
+const sessionCwd = getFallbackSessionCwd();
 const walkthroughFilePath = resolve(sessionCwd, walkthroughFile);
 if (!existsSync(walkthroughFilePath)) {
   process.stderr.write(`open-codiff: walkthrough file not found at ${walkthroughFilePath}.\n`);

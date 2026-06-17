@@ -1,6 +1,6 @@
 ---
 name: codiff
-description: Author a narrative Codiff walkthrough JSON from the current change and open it in Codiff. Use when the user writes "/codiff", "show me codiff", "open Codiff", "make a walkthrough", or asks to review the staged work as a guided narrative in Codiff.
+description: Author a narrative Codiff walkthrough JSON from the current change and open it in Codiff. Use when the user writes "$codiff" or "/codiff", "show me codiff", "open Codiff", "make a walkthrough", or asks to review the staged work as a guided narrative in Codiff.
 metadata:
   short-description: Generate a narrative walkthrough and open Codiff
 ---

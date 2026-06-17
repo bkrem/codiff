@@ -1,135 +1,146 @@
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { expect, test, vi } from 'vite-plus/test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { expect, test } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const piModule = require('../pi.cjs') as {
+const {
+  DEFAULT_PI_MODEL,
+  FALLBACK_PI_MODEL,
+  PI_MODELS,
+  PI_NOT_FOUND_CODE,
+  PI_NOT_FOUND_MESSAGE,
+  getPiCommand,
+  isPiNotFoundError,
+  normalizePiModel,
+  normalizePiOutput,
+  runPi,
+} = require('../pi.cjs') as {
   DEFAULT_PI_MODEL: string;
   FALLBACK_PI_MODEL: string;
+  PI_MODELS: ReadonlyArray<{ id: string; label: string }>;
   PI_NOT_FOUND_CODE: string;
   PI_NOT_FOUND_MESSAGE: string;
-  getCachedPiModels: () => ReadonlyArray<{ id: string; label: string }>;
-  getPiModels: () => Promise<ReadonlyArray<{ id: string; label: string }>>;
-  isPiInstalled: () => Promise<boolean>;
+  getPiCommand: () => string;
   isPiNotFoundError: (error: unknown) => boolean;
   normalizePiModel: (value: unknown) => string;
+  normalizePiOutput: (output: string, schema: unknown) => string;
   runPi: (
     repoRoot: string,
     prompt: string,
     schema: unknown,
     outputName?: string,
     timeoutMessage?: string,
+    options?: { model?: string },
   ) => Promise<string>;
 };
-
-const {
-  DEFAULT_PI_MODEL,
-  FALLBACK_PI_MODEL,
-  PI_NOT_FOUND_CODE,
-  PI_NOT_FOUND_MESSAGE,
-  getCachedPiModels,
-  isPiInstalled,
-  isPiNotFoundError,
-  normalizePiModel,
-} = piModule;
 
 test('exposes the Pi default model identifier', () => {
   expect(DEFAULT_PI_MODEL).toBe('pi-default');
   expect(FALLBACK_PI_MODEL).toBe('pi-default');
   expect(PI_NOT_FOUND_CODE).toBe('PI_NOT_FOUND');
-  expect(PI_NOT_FOUND_MESSAGE).toContain('Pi support could not be loaded');
+  expect(PI_NOT_FOUND_MESSAGE).toContain('Pi CLI was not found');
 });
 
-test('exposes the cached model list', () => {
-  expect(getCachedPiModels()).toEqual([{ id: DEFAULT_PI_MODEL, label: 'Pi default' }]);
+test('exposes a static Pi model list', () => {
+  expect(PI_MODELS).toEqual([{ id: DEFAULT_PI_MODEL, label: 'Pi default' }]);
+});
+
+test('normalizes Pi model preferences to known models', () => {
+  expect(normalizePiModel(DEFAULT_PI_MODEL)).toBe(DEFAULT_PI_MODEL);
+  expect(normalizePiModel('openai/gpt-5')).toBe(DEFAULT_PI_MODEL);
+  expect(normalizePiModel(undefined)).toBe(DEFAULT_PI_MODEL);
 });
 
 test('detects Pi-not-found errors by code', () => {
   expect(isPiNotFoundError({ code: PI_NOT_FOUND_CODE })).toBe(true);
+  expect(isPiNotFoundError({ code: 'ENOENT' })).toBe(true);
   expect(isPiNotFoundError({ code: 'MODULE_NOT_FOUND' })).toBe(false);
-  expect(isPiNotFoundError({ code: 'ENOENT' })).toBe(false);
   expect(isPiNotFoundError(new Error('other'))).toBe(false);
   expect(isPiNotFoundError(null)).toBe(false);
 });
 
-// Everything below depends on the Pi SDK being installed. The `isPiInstalled`
-// probe reuses the same dynamic-import path that `runPi` walks, so it returns
-// the same answer a real call would observe at runtime. When the SDK is
-// missing we still keep the synchronous helpers above green and skip the
-// integration-style assertions below.
-const sdkInstalled = await isPiInstalled();
+test('rejects invalid explicit Pi CLI overrides', () => {
+  const previousPiPath = process.env.CODIFF_PI_PATH;
+  process.env.CODIFF_PI_PATH = '/tmp/codiff-missing-pi';
 
-test.skipIf(!sdkInstalled)('isPiInstalled reports the SDK as installed', async () => {
-  expect(await isPiInstalled()).toBe(true);
+  try {
+    expect(() => getPiCommand()).toThrow('CODIFF_PI_PATH');
+    try {
+      getPiCommand();
+    } catch (error) {
+      expect(error).toMatchObject({ code: PI_NOT_FOUND_CODE });
+    }
+  } finally {
+    if (previousPiPath == null) {
+      delete process.env.CODIFF_PI_PATH;
+    } else {
+      process.env.CODIFF_PI_PATH = previousPiPath;
+    }
+  }
 });
 
-vi.mock('@earendil-works/pi-coding-agent', () => {
-  const defineTool = (definition: unknown) => definition;
-  return {
-    AuthStorage: {
-      create: () => ({}),
-    },
-    ModelRegistry: {
-      create: () => ({
-        getAvailable: () => [
-          { provider: 'openai', id: 'gpt-5', name: 'GPT-5' },
-          { provider: 'google', id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-        ],
-        getAll: () => [
-          { provider: 'openai', id: 'gpt-5', name: 'GPT-5' },
-          { provider: 'google', id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-        ],
-        find: (provider: string, id: string) => ({ provider, id, name: id }),
-      }),
-    },
-    SessionManager: {
-      inMemory: () => ({}),
-    },
-    createAgentSession: () =>
-      Promise.resolve({
-        session: {
-          messages: [
-            {
-              role: 'assistant',
-              content: [{ type: 'text', text: '{"version":1,"headline":"Walkthrough is ready."}' }],
-            },
-          ],
-          subscribe: () => () => {},
-          prompt: () => Promise.resolve(),
-          abort: () => Promise.resolve(),
-          dispose: () => {},
-        },
-      }),
-    defineTool,
-  };
+test('normalizes Pi JSON output from plain, fenced, and prose replies', () => {
+  expect(normalizePiOutput('{"version":1}', { required: ['version'] })).toBe('{"version":1}');
+  expect(normalizePiOutput('```json\n{"reply":"Done."}\n```', { required: ['reply'] })).toBe(
+    '{"reply":"Done."}',
+  );
+  expect(normalizePiOutput('Result:\n{"text":"Done."}', { required: ['reply'] })).toBe(
+    '{"text":"Done.","reply":"Done."}',
+  );
 });
 
-test.skipIf(!sdkInstalled)(
-  'cached model list contains real registry entries after getPiModels resolves',
-  async () => {
-    const models = await piModule.getPiModels();
-    expect(models.length).toBeGreaterThan(0);
-    for (const model of models) {
-      expect(typeof model.id).toBe('string');
-      expect(model.id.length).toBeGreaterThan(0);
-      expect(typeof model.label).toBe('string');
-    }
-  },
-  15_000,
-);
+test('runs Pi as an external read-only ephemeral CLI call', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-pi-'));
+  const fakePiPath = join(directory, 'pi');
+  const argsPath = join(directory, 'args.txt');
+  const stdinPath = join(directory, 'stdin.txt');
+  const previousPiPath = process.env.CODIFF_PI_PATH;
 
-test.skipIf(!sdkInstalled)(
-  'normalizes unknown Pi model preferences to the first real model',
-  async () => {
-    const models = await piModule.getPiModels();
-    const firstRealId = models[0]?.id;
-    if (!firstRealId) {
-      throw new Error('Expected at least one real Pi model to be registered.');
+  try {
+    await writeFile(
+      fakePiPath,
+      `#!/usr/bin/env node
+const { appendFileSync, writeFileSync } = require('node:fs');
+const argsPath = ${JSON.stringify(argsPath)};
+const stdinPath = ${JSON.stringify(stdinPath)};
+for (const arg of process.argv.slice(2)) {
+  appendFileSync(argsPath, arg + '\\n');
+}
+let stdin = '';
+process.stdin.on('data', (chunk) => {
+  stdin += chunk;
+});
+process.stdin.on('end', () => {
+  writeFileSync(stdinPath, stdin);
+  process.stdout.write('{"version":1}');
+});
+`,
+    );
+    await chmod(fakePiPath, 0o755);
+    process.env.CODIFF_PI_PATH = fakePiPath;
+
+    await expect(
+      runPi(directory, 'prompt', { required: ['version'], type: 'object' }, 'walkthrough.json'),
+    ).resolves.toBe('{"version":1}');
+
+    const args = (await readFile(argsPath, 'utf8')).trim().split('\n');
+    expect(args).toContain('--print');
+    expect(args).toContain('--no-session');
+    expect(args).toContain('--no-skills');
+    expect(args).toContain('--no-prompt-templates');
+    expect(args).toContain('--no-context-files');
+    expect(args).toContain('--tools');
+    expect(args).toContain('read,grep,find,ls');
+    expect(args).not.toContain('--model');
+    expect(await readFile(stdinPath, 'utf8')).toContain('prompt');
+  } finally {
+    if (previousPiPath == null) {
+      delete process.env.CODIFF_PI_PATH;
+    } else {
+      process.env.CODIFF_PI_PATH = previousPiPath;
     }
-    expect(normalizePiModel(firstRealId)).toBe(firstRealId);
-    // Unknown identifiers should fall back to the first real model, not the
-    // placeholder, so the agent has a working default as soon as the registry
-    // has been loaded.
-    expect(normalizePiModel('no-such/model')).toBe(firstRealId);
-    expect(normalizePiModel(undefined)).toBe(firstRealId);
-  },
-);
+    await rm(directory, { force: true, recursive: true });
+  }
+});

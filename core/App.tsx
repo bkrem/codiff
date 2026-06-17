@@ -2459,9 +2459,7 @@ export default function App() {
                 agentLabel={agentLabel}
                 onShowFiles={() => setSidebarMode('tree')}
                 reason={walkthroughError?.reason}
-                title={
-                  walkthroughError?.code === 'PI_NOT_FOUND' ? 'Pi support not found' : undefined
-                }
+                title={walkthroughError?.code === 'PI_NOT_FOUND' ? 'Pi CLI not found' : undefined}
               />
             </div>
           </div>

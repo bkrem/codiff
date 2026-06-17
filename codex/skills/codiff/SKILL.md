@@ -1,6 +1,6 @@
 ---
 name: codiff
-description: Author a narrative Codiff walkthrough JSON from the current change and open it in Codiff. Use when the user writes "$codiff", "show me codiff", "open Codiff", "make a walkthrough", or asks to review the staged work as a guided narrative in Codiff.
+description: Author a narrative Codiff walkthrough JSON from the current change and open it in Codiff. Use when the user writes "$codiff" or "/codiff", "show me codiff", "open Codiff", "make a walkthrough", or asks to review the staged work as a guided narrative in Codiff.
 metadata:
   short-description: Generate a narrative walkthrough and open Codiff
 ---
@@ -47,9 +47,9 @@ This skill is just the handoff: fetch the guide, author the document, open Codif
    node scripts/open-codiff.mjs --file /tmp/codiff-walkthrough-<id>.json pr 123 /path/to/repository
    ```
 
-   The launcher passes `CODEX_THREAD_ID` to Codiff so follow-up questions reuse this
-   conversation. Codiff validates and repairs the document against the live diff, so anchors
-   that drift are pinned to a real section rather than dropped.
+   The launcher passes `CODEX_THREAD_ID` to Codiff with `--agent codex` so follow-up
+   questions reuse this conversation. Codiff validates and repairs the document against
+   the live diff, so anchors that drift are pinned to a real section rather than dropped.
 
 Emit JSON only into the file. Do not summarize the conversation back to the user; the skill
 is a handoff into Codiff.

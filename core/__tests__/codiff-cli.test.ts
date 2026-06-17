@@ -512,6 +512,8 @@ test('Codex skill launcher uses the session cwd as the repository target', async
 
     expect(await logger.readArgs()).toEqual([
       '-w',
+      '--agent',
+      'codex',
       '--walkthrough-file',
       walkthroughFile,
       '--codex-session',
@@ -547,6 +549,8 @@ test('Codex skill launcher falls back to the source repo when run from the skill
 
     expect(await logger.readArgs()).toEqual([
       '-w',
+      '--agent',
+      'codex',
       '--walkthrough-file',
       walkthroughFile,
       resolve('.'),
@@ -588,6 +592,8 @@ test('Codex skill launcher does not override explicit repository targets', async
 
     expect(await logger.readArgs()).toEqual([
       '-w',
+      '--agent',
+      'codex',
       '--walkthrough-file',
       walkthroughFile,
       explicitRepositoryPath,

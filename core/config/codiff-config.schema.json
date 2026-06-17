@@ -18,7 +18,7 @@
           "type": "string",
           "enum": ["codex", "claude", "pi"],
           "default": "codex",
-          "description": "Which agent CLI powers review assistance and walkthroughs. 'codex' uses the OpenAI Codex CLI; 'claude' uses the Claude Code CLI; 'pi' uses the Pi CLI (reserved for upcoming pi.dev integration)."
+          "description": "Which agent CLI powers review assistance and walkthroughs. 'codex' uses the OpenAI Codex CLI; 'claude' uses the Claude Code CLI; 'pi' uses the Pi CLI."
         },
         "claudeModel": {
           "type": "string",
@@ -66,7 +66,7 @@
         "piModel": {
           "type": "string",
           "default": "pi-default",
-          "description": "The Pi model to use for review assistance and walkthroughs when agentBackend is 'pi'. Reserved for upcoming pi.dev integration."
+          "description": "The Pi model to use for review assistance and walkthroughs when agentBackend is 'pi'."
         },
         "showOutdated": {
           "type": "boolean",

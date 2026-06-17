@@ -32,7 +32,7 @@ const { normalizeClaudeModel } = require('./claude.cjs');
 const { createWalkthroughCommit } = require('./walkthrough-commit.cjs');
 const { diagnoseWalkthroughMismatch } = require('./walkthrough-diagnosis.cjs');
 const { readCommitMessageReply } = require('./walkthrough-commit-message.cjs');
-const { getPiModels, normalizePiModel, setOnPiModelsLoaded } = require('./pi.cjs');
+const { normalizePiModel } = require('./pi.cjs');
 const { getAgent, listAgents, normalizeAgentBackend } = require('./agent.cjs');
 const {
   configToPreferences,
@@ -215,7 +215,6 @@ const selectAgentBackend = (backend) => {
   }
 
   updateConfig({ settings: { ...config.settings, agentBackend } });
-  refreshAgentModels(getAgent(agentBackend));
 };
 
 /** @param {import('./agent.cjs').Agent} agent @param {string} model */
@@ -237,13 +236,6 @@ const getAgentOptions = (agent) => ({
     updateConfig({ settings: { ...config.settings, [agent.modelSettingKey]: fallbackModel } });
   },
 });
-
-/** @param {import('./agent.cjs').Agent} agent */
-const refreshAgentModels = (agent) => {
-  if (agent.id === 'pi') {
-    getPiModels().catch(() => {});
-  }
-};
 
 /**
  * @param {import('../core/types.ts').WalkthroughContext | null | undefined} providedContext
@@ -401,7 +393,6 @@ const buildAgentSubmenu = () =>
 /** @returns {Array<import('electron').MenuItemConstructorOptions>} */
 const buildModelSubmenu = () => {
   const agent = getActiveAgent();
-  refreshAgentModels(agent);
   return agent.models.map((model) => ({
     checked: config.settings[agent.modelSettingKey] === model.id,
     click: () => selectAgentModel(agent, model.id),
@@ -881,16 +872,6 @@ if (squirrelStartup || !lock) {
     config.settings.agentBackend = normalizeAgentBackend(config.settings.agentBackend);
     nativeTheme.themeSource = config.settings.theme;
     Menu.setApplicationMenu(buildApplicationMenu());
-
-    // Re-normalize piModel now that models have loaded, then rebuild menu.
-    setOnPiModelsLoaded(() => {
-      const realPiModel = normalizePiModel(config.settings.piModel);
-      if (realPiModel !== config.settings.piModel) {
-        config.settings.piModel = realPiModel;
-        writeConfig(config);
-      }
-      Menu.setApplicationMenu(buildApplicationMenu());
-    });
 
     const launchOptions = getLaunchOptions();
     focusOrCreateWindow(
