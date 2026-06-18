@@ -571,6 +571,10 @@
   padding: 0 8px;
 }
 
+.share-shell .sidebar-mode-toggle {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .sidebar-mode-toggle button {
   -webkit-app-region: no-drag;
   background: transparent;

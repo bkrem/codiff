@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
+import { FileTree, useFileTree } from '@pierre/trees/react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { ReviewCodeView, type ReviewDiffBlock } from './app/components/ReviewCodeView.tsx';
 import { NarrativeSidebar } from './app/components/walkthrough/NarrativeSidebar.tsx';
 import {
@@ -8,8 +18,21 @@ import {
 import { useNarrativeNavigation } from './app/components/walkthrough/useNarrativeNavigation.ts';
 import { createDefaultConfig } from './config/defaults.ts';
 import { getAgentLabel } from './lib/app-constants.ts';
-import type { ReviewComment, ReviewIdentity } from './lib/app-types.ts';
-import { compactPath } from './lib/files.ts';
+import type {
+  CodeViewInstance,
+  ReviewComment,
+  ReviewIdentity,
+  ReviewScrollTarget,
+} from './lib/app-types.ts';
+import { DEFAULT_PADDING } from './lib/code-view-options.ts';
+import {
+  formatTreeLineCount,
+  getDiffLineCount,
+  getDiffLineCountTitle,
+  getFirstVisibleSection,
+  getItemId,
+} from './lib/diff.ts';
+import { compactPath, fileTreeSort, statusForTree } from './lib/files.ts';
 import { getReviewCommentsFromState } from './lib/review-comments.ts';
 import {
   updateReviewIdentityCollapsed,
@@ -26,6 +49,7 @@ import type {
 } from './types.ts';
 
 const emptyReviewComments: ReadonlyArray<ReviewComment> = [];
+const emptyPaths = new Set<string>();
 const emptyWalkthroughNotes = new Map();
 const walkthroughCodeViewBottomInset = 96;
 const CODE_FONT_SIZE_DEFAULT = 13;
@@ -65,6 +89,120 @@ const disabledCommitMessage = async (): Promise<WalkthroughCommitMessageResult> 
   status: 'unavailable',
 });
 
+function SharedFileTree({
+  files,
+  onActivatePath,
+  selectedPath,
+  showWhitespace,
+}: {
+  files: ReadonlyArray<ChangedFile>;
+  onActivatePath: (path: string) => void;
+  selectedPath: string | null;
+  showWhitespace: boolean;
+}) {
+  const paths = useMemo(() => files.map((file) => file.path), [files]);
+  const filePathSet = useMemo(() => new Set(paths), [paths]);
+  const lineCountsByPath = useMemo(
+    () => new Map(files.map((file) => [file.path, getDiffLineCount(file, showWhitespace)])),
+    [files, showWhitespace],
+  );
+  const lineCountsByPathRef = useRef(lineCountsByPath);
+  const renderTreeRowDecoration = useCallback<FileTreeRowDecorationRenderer>(({ item }) => {
+    const lineCount = lineCountsByPathRef.current.get(item.path);
+    return lineCount?.countable
+      ? {
+          text: formatTreeLineCount(lineCount),
+          title: getDiffLineCountTitle(lineCount),
+        }
+      : null;
+  }, []);
+  const status = useMemo(
+    () =>
+      files.map((file) => ({
+        path: file.path,
+        status: statusForTree[file.status],
+      })),
+    [files],
+  );
+  const { model } = useFileTree({
+    flattenEmptyDirectories: true,
+    gitStatus: status,
+    initialExpansion: 'open',
+    initialSelectedPaths: selectedPath ? [selectedPath] : [],
+    itemHeight: 30,
+    paths,
+    renderRowDecoration: renderTreeRowDecoration,
+    sort: fileTreeSort,
+    unsafeCSS: `
+      :host {
+        --trees-padding-inline-override: 4px;
+        color: var(--sidebar-text);
+        font: 13px/1.35 var(--font-sans);
+      }
+
+      button[data-type='item'] {
+        border-radius: 14px;
+        corner-shape: squircle;
+      }
+
+      [data-item-section='decoration'] {
+        color: var(--muted);
+        font: 600 10px/1 var(--font-mono);
+        letter-spacing: 0;
+      }
+    `,
+  });
+
+  useLayoutEffect(() => {
+    lineCountsByPathRef.current = lineCountsByPath;
+    if (model.getFileTreeContainer()) {
+      model.render({});
+    }
+  }, [lineCountsByPath, model]);
+
+  useEffect(() => {
+    model.resetPaths(paths);
+  }, [model, paths]);
+
+  useEffect(() => {
+    model.setGitStatus(status);
+  }, [model, status]);
+
+  useEffect(() => {
+    if (!selectedPath) {
+      return;
+    }
+
+    for (const path of model.getSelectedPaths()) {
+      model.getItem(path)?.deselect();
+    }
+    model.getItem(selectedPath)?.select();
+  }, [model, selectedPath]);
+
+  const handleTreeClick = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      for (const target of event.nativeEvent.composedPath()) {
+        if (!('getAttribute' in target) || typeof target.getAttribute !== 'function') {
+          continue;
+        }
+
+        const path = target.getAttribute('data-item-path');
+        if (path && filePathSet.has(path)) {
+          onActivatePath(path);
+          return;
+        }
+      }
+    },
+    [filePathSet, onActivatePath],
+  );
+
+  return (
+    <div className="file-tree-shell">
+      <FileTree className="file-tree" model={model} onClick={handleTreeClick} />
+    </div>
+  );
+}
+
 export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthroughSnapshot }) {
   const sharedWalkthrough = useMemo(
     () => ({
@@ -80,6 +218,11 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
   );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [itemVersionByKey, setItemVersionByKey] = useState<Record<string, number>>({});
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    () => snapshot.files[0]?.path ?? null,
+  );
+  const [sidebarMode, setSidebarMode] = useState<'tree' | 'walkthrough'>('walkthrough');
+  const [treeScrollTarget, setTreeScrollTarget] = useState<ReviewScrollTarget | null>(null);
   const [viewed, setViewed] = useState<Record<string, string>>({});
   const reviewComments = useMemo(() => getSnapshotReviewComments(snapshot), [snapshot]);
 
@@ -134,6 +277,44 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
       bumpItemVersion(reviewIdentity.key);
     },
     [bumpItemVersion],
+  );
+  const activateTreePath = useCallback((path: string) => {
+    setSelectedPath(path);
+    setTreeScrollTarget((current) => ({
+      behavior: 'smooth',
+      path,
+      request: (current?.request ?? 0) + 1,
+    }));
+  }, []);
+  const updateSelectedPathFromScroll = useCallback(
+    (viewer: CodeViewInstance) => {
+      if (snapshot.files.length === 0) {
+        return;
+      }
+
+      const activationTop = viewer.getScrollTop() + DEFAULT_PADDING;
+      let nextPath = snapshot.files[0]?.path ?? null;
+      let nextDistance = Number.NEGATIVE_INFINITY;
+
+      for (const file of snapshot.files) {
+        const section = getFirstVisibleSection(file, snapshot.preferences.showWhitespace);
+        const itemTop = section ? viewer.getTopForItem(getItemId(section)) : undefined;
+        if (itemTop == null) {
+          continue;
+        }
+
+        const distance = itemTop - activationTop;
+        if (distance <= 0 && distance > nextDistance) {
+          nextDistance = distance;
+          nextPath = file.path;
+        }
+      }
+
+      if (nextPath) {
+        setSelectedPath((current) => (current === nextPath ? current : nextPath));
+      }
+    },
+    [snapshot.files, snapshot.preferences.showWhitespace],
   );
 
   const diffLineHeight = getCodeFontLineHeight(
@@ -216,27 +397,67 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
             </div>
           </div>
         </div>
-        <NarrativeSidebar
-          allowCommit={false}
-          files={snapshot.files}
-          navigation={navigation}
-          showWhitespace={snapshot.preferences.showWhitespace}
-          walkthrough={sharedWalkthrough}
-        />
+        <div aria-label="Review order" className="sidebar-mode-toggle" role="tablist">
+          <button
+            aria-selected={sidebarMode === 'tree'}
+            onClick={() => setSidebarMode('tree')}
+            role="tab"
+            type="button"
+          >
+            Tree
+          </button>
+          <button
+            aria-selected={sidebarMode === 'walkthrough'}
+            onClick={() => setSidebarMode('walkthrough')}
+            role="tab"
+            type="button"
+          >
+            Walkthrough
+          </button>
+        </div>
+        {sidebarMode === 'tree' ? (
+          <SharedFileTree
+            files={snapshot.files}
+            onActivatePath={activateTreePath}
+            selectedPath={selectedPath}
+            showWhitespace={snapshot.preferences.showWhitespace}
+          />
+        ) : (
+          <NarrativeSidebar
+            allowCommit={false}
+            files={snapshot.files}
+            navigation={navigation}
+            showWhitespace={snapshot.preferences.showWhitespace}
+            walkthrough={sharedWalkthrough}
+          />
+        )}
       </aside>
       <div aria-hidden className="sidebar-resizer" />
       <main className="review">
-        <NarrativeWalkthroughView
-          allowCommit={false}
-          files={snapshot.files}
-          navigation={navigation}
-          onActiveReviewTargetChange={noop}
-          onCommit={disabledCommit}
-          onUpdateCommitMessage={disabledCommitMessage}
-          renderDiffBlocks={renderWalkthroughDiffBlocks}
-          showWhitespace={snapshot.preferences.showWhitespace}
-          walkthrough={sharedWalkthrough}
-        />
+        {sidebarMode === 'tree' ? (
+          <ReviewCodeView
+            {...commonReviewProps}
+            allowViewedToggle
+            files={snapshot.files}
+            forceExpandedPaths={emptyPaths}
+            onSelectPathFromScroll={updateSelectedPathFromScroll}
+            scrollTarget={treeScrollTarget}
+            selectedPath={selectedPath}
+            walkthroughNotes={emptyWalkthroughNotes}
+          />
+        ) : (
+          <NarrativeWalkthroughView
+            allowCommit={false}
+            files={snapshot.files}
+            navigation={navigation}
+            onActiveReviewTargetChange={noop}
+            onCommit={disabledCommit}
+            onUpdateCommitMessage={disabledCommitMessage}
+            renderDiffBlocks={renderWalkthroughDiffBlocks}
+            showWhitespace={snapshot.preferences.showWhitespace}
+            walkthrough={sharedWalkthrough}
+          />
+        )}
       </main>
     </div>
   );
