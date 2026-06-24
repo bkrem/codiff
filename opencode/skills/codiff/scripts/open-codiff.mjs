@@ -5,6 +5,7 @@
 //
 // Usage:
 //   node scripts/open-codiff.mjs --file <path> [target]
+//   node scripts/open-codiff.mjs --plan <path> [repository]
 //
 // `--file <path>` is forwarded to Codiff as `--walkthrough-file`. Any non-flag
 // target is forwarded verbatim; when no repository path is given, the current
@@ -177,6 +178,7 @@ if (rawArgs.includes('--guide')) {
 
 const forwardedArgs = [];
 let openSharedWalkthrough = false;
+let planFile = '';
 let shareWalkthrough = false;
 let walkthroughFile = '';
 for (let index = 0; index < rawArgs.length; index += 1) {
@@ -190,6 +192,15 @@ for (let index = 0; index < rawArgs.length; index += 1) {
     walkthroughFile = arg.slice('--file='.length);
     continue;
   }
+  if (arg === '--plan') {
+    planFile = rawArgs[index + 1] || '';
+    index += 1;
+    continue;
+  }
+  if (arg.startsWith('--plan=')) {
+    planFile = arg.slice('--plan='.length);
+    continue;
+  }
   if (arg === '--share') {
     shareWalkthrough = true;
     continue;
@@ -201,12 +212,49 @@ for (let index = 0; index < rawArgs.length; index += 1) {
   forwardedArgs.push(arg);
 }
 
+const sessionCwd = getSessionCwd();
+
+if (planFile) {
+  const planFilePath = resolve(sessionCwd, planFile);
+  if (!existsSync(planFilePath) || !/\.md$/i.test(planFilePath)) {
+    process.stderr.write(`open-codiff: plan file not found at ${planFilePath}.\n`);
+    process.exit(1);
+  }
+  const hasRepositoryTarget = forwardedArgs.some(
+    (arg) => !arg.startsWith('-') && existsSync(resolve(sessionCwd, arg)),
+  );
+  const environmentSessionId = process.env.OPENCODE_SESSION_ID || '';
+  const sessionId =
+    (sessionIdPattern.test(environmentSessionId) ? environmentSessionId : '') ||
+    findOpenCodeSessionIdForCwd(sessionCwd) ||
+    '';
+  const codiffCommand = getCodiffCommand();
+  const result = spawnSync(
+    codiffCommand.command,
+    [
+      ...codiffCommand.args,
+      '--plan',
+      planFilePath,
+      '--agent',
+      'opencode',
+      ...(sessionId ? ['--opencode-session', sessionId] : []),
+      ...forwardedArgs,
+      ...(hasRepositoryTarget ? [] : [sessionCwd]),
+    ],
+    { cwd: sessionCwd, encoding: 'utf8', stdio: 'inherit' },
+  );
+  if (result.error) {
+    process.stderr.write(`${result.error.message}\n`);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 0);
+}
+
 if (!walkthroughFile) {
   process.stderr.write('open-codiff: missing --file <path> to the walkthrough JSON.\n');
   process.exit(1);
 }
 
-const sessionCwd = getSessionCwd();
 const walkthroughFilePath = resolve(sessionCwd, walkthroughFile);
 if (!existsSync(walkthroughFilePath)) {
   process.stderr.write(`open-codiff: walkthrough file not found at ${walkthroughFilePath}.\n`);

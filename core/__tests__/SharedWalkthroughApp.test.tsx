@@ -133,6 +133,11 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
       expect(container.querySelector('.walkthrough-list')).not.toBeNull();
     });
 
+    const searchInput = container.querySelector<HTMLInputElement>('.sidebar-search');
+    expect(searchInput).not.toBeNull();
+    expect(searchInput?.placeholder).toBe('Filter files');
+    const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+
     const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     expect(tabs).toHaveLength(2);
     expect(tabs[0]?.textContent).toBe('Tree');
@@ -156,6 +161,33 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
     ).toBe(true);
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
     expect(tabs[1]?.getAttribute('aria-selected')).toBe('false');
+
+    await act(async () => {
+      if (!searchInput) {
+        return;
+      }
+      setInputValue?.call(searchInput, 'does-not-exist');
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.empty-panel')?.textContent).toContain('No matching files');
+      expect(container.querySelector('.empty-panel')?.textContent).toContain('does-not-exist');
+    });
+
+    await act(async () => {
+      if (!searchInput) {
+        return;
+      }
+      setInputValue?.call(searchInput, 'readme');
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.empty-panel')).toBeNull();
+      expect(container.textContent).toContain('README.md');
+      expect(container.textContent).not.toContain('src/app.ts');
+    });
 
     await act(async () => {
       tabs[1]?.click();

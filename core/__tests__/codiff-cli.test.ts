@@ -217,6 +217,14 @@ test('parseArguments recognizes a pre-authored walkthrough file', () => {
   });
 });
 
+test('parseArguments recognizes a blocking Markdown plan', () => {
+  expect(parseArguments(['--plan', 'plan.md'])).toMatchObject({
+    planFilePath: resolve('plan.md'),
+    requestedPath: resolve(process.cwd()),
+    walkthrough: false,
+  });
+});
+
 test('parseArguments treats --share as a headless walkthrough for the same target syntax', () => {
   expect(parseArguments(['--share', 'HEAD'])).toMatchObject({
     commitRef: 'HEAD',
@@ -567,6 +575,97 @@ test('packaged terminal helper forwards pre-authored walkthrough files', async (
   }
 });
 
+test('packaged terminal helper forwards a plan handoff and result file', async () => {
+  const logger = await createFakeOpenLogger();
+  const repositoryPath = join(logger.directory, 'repo');
+  const planFile = join(logger.directory, 'plan.md');
+  const resultFile = join(logger.directory, 'result.json');
+
+  try {
+    await mkdir(repositoryPath);
+    await writeFile(planFile, '# Plan\n');
+    await writeFile(resultFile, '{"status":"done"}\n');
+
+    const { stdout } = await execFileAsync(
+      resolve('bin/codiff-app'),
+      ['--plan-file', planFile, '--plan-result-file', resultFile, repositoryPath],
+      {
+        env: logger.env,
+      },
+    );
+
+    expect(await logger.readArgs()).toEqual([
+      '-n',
+      resolve('bin/../../../..'),
+      '--args',
+      '--plan-file',
+      planFile,
+      '--plan-result-file',
+      resultFile,
+      repositoryPath,
+    ]);
+    expect(stdout).toBe('CODIFF_PLAN_RESULT {"status":"done"}\n');
+  } finally {
+    await logger.cleanup();
+  }
+});
+
+test('packaged terminal helper waits for an open plan to finish', async () => {
+  const logger = await createFakeOpenLogger();
+  const repositoryPath = join(logger.directory, 'repo');
+  const planFile = join(logger.directory, 'plan.md');
+  const resultFile = join(logger.directory, 'result.json');
+  const openPath = join(logger.directory, 'bin', 'open');
+
+  try {
+    await mkdir(repositoryPath);
+    await writeFile(planFile, '# Plan\n');
+    await writeFile(
+      openPath,
+      `#!/bin/sh
+result_file=""
+previous=""
+for arg in "$@"; do
+  printf "%s\\n" "$arg" >> "$OPEN_ARGS_FILE"
+  if [ "$previous" = "--plan-result-file" ]; then
+    result_file="$arg"
+  fi
+  previous="$arg"
+done
+(
+  sleep 0.05
+  printf '{"documentChanged":true,"status":"closed"}\\n' > "$result_file"
+) &
+app_pid=$!
+printf '{"pid":%s,"status":"open"}\\n' "$app_pid" > "$result_file"
+`,
+    );
+    await chmod(openPath, 0o755);
+
+    const { stdout } = await execFileAsync(
+      resolve('bin/codiff-app'),
+      ['--plan-file', planFile, '--plan-result-file', resultFile, repositoryPath],
+      {
+        env: logger.env,
+      },
+    );
+
+    expect(await logger.readArgs()).toEqual([
+      '-n',
+      resolve('bin/../../../..'),
+      '--args',
+      '--plan-file',
+      planFile,
+      '--plan-result-file',
+      resultFile,
+      repositoryPath,
+    ]);
+    expect(stdout).toBe('CODIFF_PLAN_RESULT {"documentChanged":true,"status":"closed"}\n');
+  } finally {
+    await logger.cleanup();
+  }
+});
+
 test('Codex skill launcher uses the session cwd as the repository target', async () => {
   const logger = await createFakeCommandLogger('codiff-skill-launcher-', 'codiff');
   const home = join(logger.directory, 'home');
@@ -613,6 +712,41 @@ test('Codex skill launcher uses the session cwd as the repository target', async
       '--codex-session',
       sessionId,
       'HEAD',
+      repositoryPath,
+    ]);
+  } finally {
+    await logger.cleanup();
+  }
+});
+
+test('Codex skill launcher opens a blocking plan handoff', async () => {
+  const logger = await createFakeCommandLogger('codiff-plan-launcher-', 'codiff');
+  const repositoryPath = join(logger.directory, 'repo');
+  const planFile = join(logger.directory, 'plan.md');
+
+  try {
+    await mkdir(repositoryPath, { recursive: true });
+    await writeFile(planFile, '# Plan\n');
+
+    await execFileAsync(
+      process.execPath,
+      [resolve('codex/skills/codiff/scripts/open-codiff.mjs'), '--plan', planFile],
+      {
+        cwd: resolve('codex/skills/codiff'),
+        env: {
+          ...logger.env,
+          CODEX_SESSION_CWD: repositoryPath,
+          CODEX_THREAD_ID: '',
+          CODIFF_COMMAND: logger.commandPath,
+        },
+      },
+    );
+
+    expect(await logger.readArgs()).toEqual([
+      '--plan',
+      planFile,
+      '--agent',
+      'codex',
       repositoryPath,
     ]);
   } finally {
@@ -1001,6 +1135,7 @@ test('formatHelpText includes version and all flags', () => {
   expect(text).toContain('--commit');
   expect(text).toContain('--codex-session');
   expect(text).toContain('--opencode-session');
+  expect(text).toContain('--plan');
   expect(text).toContain('--share');
   expect(text).toContain('--walkthrough');
   expect(text).toContain('--walkthrough-context');

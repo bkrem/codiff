@@ -20,6 +20,7 @@ export type ReviewCommentAnnotationMetadata = {
 type MarkdownPreviewAnnotationMetadata = {
   addedLines: ReadonlySet<number>;
   contents: string;
+  editable: boolean;
   layoutKey: string;
   path: string;
   sectionId: string;
@@ -142,6 +143,7 @@ export type RepositoryLoadError = {
 
 export type CodeViewItemMetadata = {
   blockId: string;
+  canEditMarkdown: boolean;
   canRenderMarkdown: boolean;
   comments: ReadonlyArray<ReviewComment>;
   file: ChangedFile;

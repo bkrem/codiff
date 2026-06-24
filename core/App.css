@@ -1,3 +1,4 @@
+@import '@nkzw/mdx-editor/styles.css';
 @import 'tailwindcss';
 @import './walkthrough.css';
 
@@ -166,6 +167,317 @@
   grid-template-columns: 292px 0 minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
+}
+
+.plan-shell {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+}
+
+.plan-header {
+  -webkit-app-region: drag;
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  align-items: center;
+  backdrop-filter: blur(28px) saturate(1.3);
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  height: 40px;
+  padding: 0 14px 0 78px;
+}
+
+html[data-codiff-platform='darwin'] .plan-header {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--sidebar-vibrancy-tint);
+}
+
+.plan-title {
+  color: var(--sidebar-text);
+  font: 600 12px/1.35 var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-review.review {
+  container: plan-review / inline-size;
+  min-height: 0;
+  overflow: auto;
+}
+
+.plan-done-button {
+  justify-self: end;
+}
+
+.plan-save-error {
+  background: color-mix(in srgb, var(--danger) 12%, var(--code-bg));
+  border: 1px solid color-mix(in srgb, var(--danger) 36%, transparent);
+  border-radius: 12px;
+  color: var(--danger);
+  corner-shape: squircle;
+  font: 12px/1.4 var(--font-sans);
+  left: 50%;
+  max-width: min(520px, calc(100% - 32px));
+  padding: 8px 12px;
+  position: absolute;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.plan-document.code-view {
+  contain: none;
+  flex: none;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  padding-inline: 0;
+  padding-block: 14px 48px;
+  width: min(920px, 100%);
+}
+
+.plan-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 920px);
+  justify-content: center;
+  margin-inline: auto;
+  min-height: 100%;
+  min-width: min(100%, 920px);
+  padding-inline: 12px;
+  position: relative;
+  width: 100%;
+}
+
+.plan-workspace.with-comments {
+  column-gap: 0;
+  grid-template-columns: minmax(0, 920px) 360px;
+  justify-content: start;
+  min-width: 1304px;
+  width: max-content;
+}
+
+.plan-file-surface {
+  background: var(--code-bg);
+  border-radius: var(--codiff-diff-radius);
+  box-shadow:
+    0 0 0 1px var(--file-border),
+    6px 18px 80px -54px rgb(0 0 0 / 0.78);
+  corner-shape: squircle;
+  inline-size: 100%;
+  margin-inline: 0;
+  overflow: clip;
+}
+
+.plan-file-header {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.codiff-plan-editor {
+  --mdx-editor-annotation-active-bg: color-mix(in srgb, var(--sidebar-ref) 32%, transparent);
+  --mdx-editor-annotation-bg: color-mix(in srgb, var(--sidebar-ref) 22%, transparent);
+  --mdx-editor-font-size: 14px;
+  --mdx-editor-line-height: 1.55;
+  --mdx-editor-padding: 18px 24px 26px;
+  display: block;
+}
+
+.codiff-plan-editor .mdx-editor-content {
+  background: var(--code-bg);
+  border: 0;
+  border-radius: 0 0 var(--codiff-diff-radius) var(--codiff-diff-radius);
+}
+
+.plan-comment-affordance {
+  background: transparent;
+  height: 24px;
+  left: var(--plan-comment-left);
+  position: absolute;
+  top: var(--plan-comment-top);
+  width: var(--plan-comment-width);
+  z-index: 6;
+}
+
+.plan-comment-add {
+  align-items: center;
+  background: var(--code-bg);
+  border: 1px solid color-mix(in srgb, var(--sidebar-ref) 42%, var(--file-border));
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0) inset,
+    0 10px 32px -24px rgb(0 0 0 / 0);
+  color: var(--sidebar-ref);
+  corner-shape: squircle;
+  cursor: pointer;
+  display: inline-flex;
+  font: 600 18px/1 var(--font-sans);
+  height: 24px;
+  justify-content: center;
+  padding: 0 0 1px;
+  position: absolute;
+  right: 12px;
+  top: 0;
+  transform: translateY(-2px) scale(1);
+  transition:
+    background 160ms ease,
+    box-shadow 250ms ease,
+    transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  width: 24px;
+}
+
+.plan-comment-add:hover {
+  background: color-mix(in srgb, var(--sidebar-ref) 12%, var(--code-bg));
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.2) inset,
+    0 10px 32px -24px rgb(0 0 0 / 0.92),
+    0 8px 20px -16px rgb(0 0 0 / 0.82);
+  transform: translateY(-2px) scale(1.08);
+}
+
+.plan-comment-add:active {
+  transform: translateY(-2px) scale(0.94);
+}
+
+.plan-comment-rail {
+  align-self: stretch;
+  min-height: var(--plan-comment-rail-min-height);
+  min-width: 0;
+  width: 360px;
+}
+
+.plan-comment-rail-scroll {
+  height: 100%;
+  min-height: inherit;
+  position: relative;
+}
+
+.plan-comment-position {
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+
+.plan-comment-thread {
+  overflow: visible;
+  padding: 0;
+}
+
+.plan-comment-thread .review-comment-body {
+  background: var(--code-bg);
+}
+
+.plan-comment-thread.active .review-comment-body {
+  border-color: color-mix(in srgb, var(--sidebar-ref) 48%, var(--file-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--sidebar-ref) 18%, transparent);
+}
+
+.plan-comment-header {
+  column-gap: 0;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  padding-right: 0;
+}
+
+.plan-comment-heading {
+  align-items: baseline;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plan-comment-target {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  display: none;
+  font: inherit;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-comment-target:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.plan-comment-target:focus-visible {
+  color: var(--text);
+  outline: 1px solid var(--sidebar-ref);
+  outline-offset: 2px;
+}
+
+.plan-comment-target:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.7;
+  text-decoration: none;
+}
+
+@container plan-review (max-width: 1400px) {
+  .plan-workspace.with-comments {
+    gap: 0;
+    grid-template-areas: 'plan-content';
+    grid-template-columns: minmax(0, 920px);
+    justify-content: center;
+    min-width: min(100%, 920px);
+    width: 100%;
+  }
+
+  .plan-workspace.with-comments .plan-document {
+    grid-area: plan-content;
+    padding-bottom: calc(40dvh + 28px);
+  }
+
+  .plan-comment-rail {
+    background: var(--code-bg);
+    border: 1px solid var(--file-border);
+    border-radius: var(--codiff-diff-radius, 28px);
+    bottom: 12px;
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.03) inset,
+      0 18px 64px -34px rgb(0 0 0 / 0.72);
+    corner-shape: squircle;
+    left: 50%;
+    max-height: 40dvh;
+    min-height: 0;
+    overflow: hidden;
+    position: fixed;
+    transform: translateX(-50%);
+    width: min(calc(100vw - 24px), 896px);
+    z-index: 7;
+  }
+
+  .plan-comment-rail-scroll {
+    display: grid;
+    gap: 0;
+    max-height: 40dvh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 8px;
+    scrollbar-gutter: stable;
+  }
+
+  .plan-comment-position {
+    position: static;
+  }
+
+  .plan-comment-thread.review-comment-thread {
+    padding: 8px 4px;
+  }
+
+  .plan-comment-target {
+    display: block;
+  }
 }
 
 .share-shell {
@@ -1224,67 +1536,71 @@ html[data-codiff-platform='darwin'] .sidebar {
 
 .codiff-markdown-preview {
   box-sizing: border-box;
+  inline-size: min(100%, 920px);
+  max-inline-size: 920px;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.codiff-markdown-preview:not(.editable) {
   color: var(--text);
   font: 14px/1.55 var(--font-sans);
-  inline-size: min(100%, 860px);
-  max-inline-size: 860px;
-  min-inline-size: 0;
   overflow-wrap: anywhere;
   padding: 18px 24px 26px;
   white-space: normal;
   word-break: normal;
 }
 
-.codiff-markdown-preview > :first-child {
+.codiff-markdown-preview:not(.editable) > :first-child {
   margin-top: 0;
 }
 
-.codiff-markdown-preview > :last-child {
+.codiff-markdown-preview:not(.editable) > :last-child {
   margin-bottom: 0;
 }
 
-.codiff-markdown-preview h1,
-.codiff-markdown-preview h2,
-.codiff-markdown-preview h3,
-.codiff-markdown-preview h4,
-.codiff-markdown-preview h5,
-.codiff-markdown-preview h6 {
+.codiff-markdown-preview:not(.editable) h1,
+.codiff-markdown-preview:not(.editable) h2,
+.codiff-markdown-preview:not(.editable) h3,
+.codiff-markdown-preview:not(.editable) h4,
+.codiff-markdown-preview:not(.editable) h5,
+.codiff-markdown-preview:not(.editable) h6 {
   color: var(--text);
   font-weight: 700;
   line-height: 1.2;
   margin: 22px 0 10px;
 }
 
-.codiff-markdown-preview h1 {
+.codiff-markdown-preview:not(.editable) h1 {
   border-bottom: 1px solid var(--file-border);
   font-size: 24px;
   padding-bottom: 8px;
 }
 
-.codiff-markdown-preview h2 {
+.codiff-markdown-preview:not(.editable) h2 {
   border-bottom: 1px solid var(--file-border);
   font-size: 20px;
   padding-bottom: 6px;
 }
 
-.codiff-markdown-preview h3 {
+.codiff-markdown-preview:not(.editable) h3 {
   font-size: 17px;
 }
 
-.codiff-markdown-preview p,
-.codiff-markdown-preview blockquote,
-.codiff-markdown-preview ol,
-.codiff-markdown-preview ul,
-.codiff-markdown-preview pre {
+.codiff-markdown-preview:not(.editable) p,
+.codiff-markdown-preview:not(.editable) blockquote,
+.codiff-markdown-preview:not(.editable) ol,
+.codiff-markdown-preview:not(.editable) ul,
+.codiff-markdown-preview:not(.editable) pre {
   margin: 0 0 14px;
 }
 
-.codiff-markdown-preview .codiff-markdown-added {
+.codiff-markdown-preview:not(.editable) .codiff-markdown-added {
   border-radius: 0 6px 6px 0;
   position: relative;
 }
 
-.codiff-markdown-preview .codiff-markdown-added::before {
+.codiff-markdown-preview:not(.editable) .codiff-markdown-added::before {
   background: var(--diff-addition);
   border-radius: 0;
   bottom: 0;
@@ -1295,32 +1611,33 @@ html[data-codiff-platform='darwin'] .sidebar {
   width: 3px;
 }
 
-.codiff-markdown-preview :is(h1, h2, h3, h4, h5, h6, p, blockquote, pre).codiff-markdown-added {
+.codiff-markdown-preview:not(.editable)
+  :is(h1, h2, h3, h4, h5, h6, p, blockquote, pre).codiff-markdown-added {
   margin-inline: -10px;
   padding: 6px 10px 6px 14px;
 }
 
-.codiff-markdown-preview ol,
-.codiff-markdown-preview ul {
+.codiff-markdown-preview:not(.editable) ol,
+.codiff-markdown-preview:not(.editable) ul {
   padding-left: 22px;
 }
 
-.codiff-markdown-preview :is(ol, ul).codiff-markdown-added {
+.codiff-markdown-preview:not(.editable) :is(ol, ul).codiff-markdown-added {
   margin-inline: -10px;
   padding: 6px 10px 6px 34px;
 }
 
-.codiff-markdown-preview li + li {
+.codiff-markdown-preview:not(.editable) li + li {
   margin-top: 4px;
 }
 
-.codiff-markdown-preview blockquote {
+.codiff-markdown-preview:not(.editable) blockquote {
   border-left: 3px solid var(--file-border);
   color: var(--muted);
   padding-left: 12px;
 }
 
-.codiff-markdown-preview pre {
+.codiff-markdown-preview:not(.editable) pre {
   background: rgb(127 127 127 / 0.09);
   border: 1px solid rgb(127 127 127 / 0.14);
   border-radius: 8px;
@@ -1344,24 +1661,92 @@ html[data-codiff-platform='darwin'] .sidebar {
   overflow: clip;
 }
 
-.codiff-markdown-preview .codiff-markdown-code-added {
+.codiff-markdown-preview:not(.editable) .codiff-markdown-code-added {
   margin-inline: -10px;
   padding-inline: 10px;
 }
 
-.codiff-markdown-preview code {
+.codiff-markdown-preview:not(.editable) code {
   font-family: var(--font-mono);
 }
 
-.codiff-markdown-preview hr {
+.codiff-markdown-preview:not(.editable) hr {
   border: 0;
   border-top: 1px solid var(--file-border);
   margin: 20px 0;
 }
 
-.codiff-markdown-preview hr.codiff-markdown-added {
+.codiff-markdown-preview:not(.editable) hr.codiff-markdown-added {
   margin-inline: -10px;
   padding: 6px 10px;
+}
+
+.codiff-markdown-document-editor,
+.codiff-markdown-snapshot-editor,
+.codiff-plan-editor {
+  --mdx-editor-accent: var(--tree-selection-focus);
+  --mdx-editor-accent-contrast: #fff;
+  --mdx-editor-accent-soft: var(--tree-selection-bg);
+  --mdx-editor-bg: transparent;
+  --mdx-editor-border: var(--file-border);
+  --mdx-editor-code-bg: var(--inline-code-bg);
+  --mdx-editor-font: var(--font-sans);
+  --mdx-editor-hover: var(--hover-wash);
+  --mdx-editor-mono-font: var(--font-mono);
+  --mdx-editor-muted: var(--muted);
+  --mdx-editor-selection: var(--tree-selection-bg);
+  --mdx-editor-text: var(--text);
+}
+
+.codiff-markdown-document-editor,
+.codiff-markdown-snapshot-editor {
+  --mdx-editor-font-size: 14px;
+  --mdx-editor-line-height: 1.55;
+  --mdx-editor-padding: 18px 24px 26px;
+}
+
+.codiff-markdown-document-editor
+  .mdx-editor-content
+  li[role='checkbox'][aria-checked='true']::after,
+.codiff-plan-editor .mdx-editor-content li[role='checkbox'][aria-checked='true']::after,
+.review-comment-markdown-editor
+  .mdx-editor-content
+  li[role='checkbox'][aria-checked='true']::after {
+  border-color: var(--mdx-editor-accent-contrast);
+}
+
+.codiff-markdown-editor-message {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font: italic 13px/1.4 var(--font-sans);
+  justify-content: center;
+  min-height: 180px;
+  padding: 24px;
+}
+
+.codiff-markdown-editor-message.error {
+  color: var(--danger);
+  font-style: normal;
+}
+
+.codiff-markdown-editor-unsupported {
+  min-block-size: 180px;
+}
+
+.codiff-markdown-editor-unsupported .codiff-markdown-editor-message {
+  min-height: auto;
+  padding-bottom: 12px;
+}
+
+.codiff-markdown-editor-source {
+  box-sizing: border-box;
+  color: var(--text);
+  font: 13px/1.55 var(--font-mono);
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 12px 24px 26px;
+  white-space: pre-wrap;
 }
 
 .codiff-image-preview {
@@ -1916,13 +2301,13 @@ html[data-codiff-platform='darwin'] .sidebar {
   max-inline-size: 100%;
   min-inline-size: 0;
   overflow-x: auto;
-  padding: 9px 12px;
+  padding: 2px 0 2px 16px;
 }
 
 .review-comment {
   align-items: flex-start;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: 34px minmax(0, 1fr);
   min-width: 0;
   width: 100%;
@@ -1994,7 +2379,6 @@ html[data-codiff-platform='darwin'] .sidebar {
   display: grid;
   font: 12px/1.3 var(--font-sans);
   gap: 8px;
-  grid-template-columns: auto minmax(0, 1fr) auto 26px;
   min-height: 34px;
   padding: 4px 4px 4px 10px;
 }
@@ -2115,9 +2499,67 @@ html[data-codiff-platform='darwin'] .sidebar {
   min-height: 76px;
   outline: none;
   overflow-y: hidden;
-  padding: 9px 10px 10px;
+  padding: 8px;
   resize: none;
   width: 100%;
+}
+
+.review-comment-markdown-editor {
+  --mdx-editor-accent: var(--tree-selection-focus);
+  --mdx-editor-accent-contrast: #fff;
+  --mdx-editor-accent-soft: var(--tree-selection-bg);
+  --mdx-editor-bg: transparent;
+  --mdx-editor-border: transparent;
+  --mdx-editor-code-bg: var(--inline-code-bg);
+  --mdx-editor-font: var(--font-sans);
+  --mdx-editor-font-size: 13px;
+  --mdx-editor-hover: var(--hover-wash);
+  --mdx-editor-line-height: 1.45;
+  --mdx-editor-muted: var(--muted);
+  --mdx-editor-padding: 8px;
+  --mdx-editor-selection: var(--tree-selection-bg);
+  --mdx-editor-text: var(--text);
+  display: block;
+  min-height: 76px;
+}
+
+.review-comment-markdown-editor .mdx-editor-content {
+  min-height: 76px;
+}
+
+.review-comment-markdown-editor [class*='_placeholder_'] {
+  color: var(--mdx-editor-muted);
+}
+
+.review-comment-markdown-editor .mdx-editor-content h1 {
+  font-size: 1.6em;
+  line-height: 1.15;
+}
+
+.review-comment-markdown-editor .mdx-editor-content h2 {
+  font-size: 1.35em;
+  line-height: 1.2;
+}
+
+.review-comment-markdown-editor .mdx-editor-content h3 {
+  font-size: 1.15em;
+  line-height: 1.3;
+}
+
+.review-comment-markdown-editor .mdx-editor-content > h1:first-child {
+  margin-top: 0;
+}
+
+.review-comment-markdown-editor .mdx-editor-content ul {
+  list-style: disc;
+}
+
+.review-comment-markdown-editor .mdx-editor-content ol {
+  list-style: decimal;
+}
+
+.review-comment-markdown-editor .mdx-editor-content li::marker {
+  color: var(--tree-selection-focus);
 }
 
 .review-comment-input::placeholder {

@@ -19,6 +19,7 @@ import {
   ReviewSourceLoading,
   WalkthroughOutdatedBanner,
 } from './app/components/Panels.tsx';
+import { PlanEditorView } from './app/components/PlanEditorView.tsx';
 import { ReviewCodeView, type ReviewDiffBlock } from './app/components/ReviewCodeView.tsx';
 import { Sidebar } from './app/components/Sidebar.tsx';
 import { CommitView } from './app/components/walkthrough/CommitView.tsx';
@@ -115,6 +116,7 @@ import type {
   ChangedFile,
   AgentSkillStatus,
   CodiffLaunchOptions,
+  CodiffMarkdownDocument,
   CodiffPreferences,
   GitIdentity,
   HistoryEntry,
@@ -228,6 +230,8 @@ export default function App() {
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [isWindowFullScreen, setIsWindowFullScreen] = useState(false);
   const [pendingSource, setPendingSource] = useState<ReviewSource | null>(null);
+  const [planDocument, setPlanDocument] = useState<CodiffMarkdownDocument | null>(null);
+  const [planLoadError, setPlanLoadError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loadingSectionIds, setLoadingSectionIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => readSidebarCollapsed());
@@ -267,6 +271,7 @@ export default function App() {
   const mainModeRef = useRef<MainMode>('review');
   const sourceRequestRef = useRef(0);
   const stateGenerationRef = useRef(0);
+  const markdownRefreshQueueRef = useRef<Promise<void>>(Promise.resolve());
   const viewedRef = useRef<Record<string, string>>({});
   const narrativeWalkthroughRef = useRef<NarrativeWalkthrough | null>(null);
   const navigationResetKey = state ? `${state.root}:${getSourceKey(state.source)}` : '';
@@ -396,6 +401,60 @@ export default function App() {
     [bumpItemVersion],
   );
 
+  const refreshMarkdownFile = useCallback(
+    (file: ChangedFile, _section: DiffSection) => {
+      const refresh = async () => {
+        const currentState = stateRef.current;
+        if (!currentState || currentState.source.type !== 'working-tree') {
+          return true;
+        }
+        const sourceRequest = sourceRequestRef.current;
+        const stateGeneration = stateGenerationRef.current;
+        const sourceKey = getSourceKey(currentState.source);
+
+        try {
+          const nextState = await window.codiff.getRepositoryState(currentState.source);
+          const orderedState = {
+            ...nextState,
+            files: sortFiles(nextState.files),
+          };
+          if (
+            sourceRequestRef.current !== sourceRequest ||
+            stateGenerationRef.current !== stateGeneration ||
+            stateRef.current?.root !== currentState.root ||
+            getSourceKey(stateRef.current.source) !== sourceKey
+          ) {
+            return false;
+          }
+
+          stateGenerationRef.current += 1;
+          stateRef.current = orderedState;
+          setState(orderedState);
+          setLocalChangesDetected(false);
+          setReviewComments(getReviewCommentsFromState(orderedState));
+          setSelectedPath((current) =>
+            current && orderedState.files.some((candidate) => candidate.path === current)
+              ? current
+              : (orderedState.files[0]?.path ?? null),
+          );
+          bumpItemVersion(file.path);
+          return true;
+        } catch {
+          setLocalChangesDetected(true);
+          return false;
+        }
+      };
+
+      const result = markdownRefreshQueueRef.current.then(refresh, refresh);
+      markdownRefreshQueueRef.current = result.then(
+        () => {},
+        () => {},
+      );
+      return result;
+    },
+    [bumpItemVersion],
+  );
+
   const scrollPathIntoReview = useCallback((path: string, behavior: ReviewScrollBehavior) => {
     setScrollTarget((current) => ({
       behavior,
@@ -467,6 +526,7 @@ export default function App() {
 
   useEffect(() => {
     let canceled = false;
+    let loadingPlan = false;
 
     const load = async () => {
       const reloadSelection = consumeReloadSelection();
@@ -475,6 +535,19 @@ export default function App() {
         return;
       }
       setLaunchOptions(nextLaunchOptions);
+
+      if (nextLaunchOptions.planFile) {
+        loadingPlan = true;
+        const nextPlanDocument = await window.codiff.getMarkdownDocument({
+          kind: 'plan',
+          path: nextLaunchOptions.planFile,
+        });
+        if (!canceled) {
+          setPlanDocument(nextPlanDocument);
+          setPlanLoadError(null);
+        }
+        return;
+      }
 
       const nextAgentSkillStatus = await window.codiff
         .getAgentSkillStatus()
@@ -604,7 +677,11 @@ export default function App() {
         return;
       }
 
-      setLoadError(getRepositoryLoadError(error));
+      if (loadingPlan) {
+        setPlanLoadError(error instanceof Error ? error.message : String(error));
+      } else {
+        setLoadError(getRepositoryLoadError(error));
+      }
       setWalkthroughLoading(false);
     });
 
@@ -2161,6 +2238,24 @@ export default function App() {
   const agentLabel = getAgentLabel(activeAgentBackend);
   const agentSkillLabel = `${agentLabel} Skill`;
 
+  if (launchOptions.planFile) {
+    if (planLoadError) {
+      return (
+        <main className="empty-state">
+          <div className="empty-panel squircle">
+            <strong>Could not open plan</strong>
+            <span>{planLoadError}</span>
+          </div>
+        </main>
+      );
+    }
+    return planDocument ? (
+      <PlanEditorView document={planDocument} />
+    ) : (
+      <main className="loading italic">Loading…</main>
+    );
+  }
+
   if (loadError) {
     const showFirstRun =
       loadError.kind === 'not-a-repository' &&
@@ -2251,6 +2346,7 @@ export default function App() {
     onLoadImageContent: window.codiff.getDiffImageContent,
     onLoadSection: loadDiffSection,
     onOpenFile: openFile,
+    onRefreshMarkdown: refreshMarkdownFile,
     onSelectPathFromScroll: updateSelectedPathFromScroll,
     onSubmitComment: submitPullRequestComment,
     onToggleCollapsed: toggleCollapsed,

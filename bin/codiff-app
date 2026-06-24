@@ -39,6 +39,7 @@ show_help() {
   printf '  %-38s%s%s%s\n' "--help, -h" "$gray" "Show this help message and exit." "$reset"
   printf '  %-38s%s%s%s\n' "--opencode-session <id>" "$gray" "Attach OpenCode session metadata to a walkthrough." "$reset"
   printf '  %-38s%s%s%s\n' "--pi-session <id>" "$gray" "Attach Pi session metadata to a walkthrough." "$reset"
+  printf '  %-38s%s%s%s\n' "--plan <file>" "$gray" "Edit a Markdown plan and wait until it is handed back." "$reset"
   printf '  %-38s%s%s%s\n' "--share" "$gray" "Generate and share a walkthrough, then print its URL; use HEAD when clean." "$reset"
   printf '  %-38s%s%s%s\n' "--version, -v" "$gray" "Show version number and exit." "$reset"
   printf '  %-38s%s%s%s\n' "--walkthrough, -w" "$gray" "Start an LLM walkthrough; use HEAD when there are no local changes." "$reset"
@@ -54,6 +55,7 @@ show_help() {
   printf '  %-22s%s%s%s\n' "codiff '#75'" "$gray" "Review pull request #75." "$reset"
   printf '  %-22s%s%s%s\n' "codiff pr 75" "$gray" "Review pull request #75 (alternate syntax)." "$reset"
   printf '  %-22s%s%s%s\n' "codiff mr 75" "$gray" "Review GitLab merge request !75." "$reset"
+  printf '  %-22s%s%s%s\n' "codiff --plan plan.md" "$gray" "Edit a plan and wait for handoff." "$reset"
   printf '  %-22s%s%s%s\n' "codiff -w" "$gray" "Walk through local changes, or HEAD when clean." "$reset"
   printf '  %-22s%s%s%s\n' "codiff -w a1b2c3d" "$gray" "Walkthrough a specific commit." "$reset"
   printf '  %-22s%s%s%s\n' "codiff --share" "$gray" "Share local changes, or HEAD when clean." "$reset"
@@ -90,6 +92,8 @@ pull_request_provider=""
 source_ref=""
 walkthrough_context_path=""
 walkthrough_file_path=""
+plan_file_path=""
+plan_result_file_path=""
 expect_codex_session=0
 expect_claude_session=0
 expect_opencode_session=0
@@ -100,6 +104,8 @@ expect_commit_ref=0
 expect_pull_request_number=0
 expect_walkthrough_context=0
 expect_walkthrough_file=0
+expect_plan_file=0
+expect_plan_result_file=0
 walkthrough=0
 
 is_commit_ref_arg() {
@@ -196,6 +202,18 @@ for arg in "$@"; do
     continue
   fi
 
+  if [ "$expect_plan_file" -eq 1 ]; then
+    plan_file_path="$arg"
+    expect_plan_file=0
+    continue
+  fi
+
+  if [ "$expect_plan_result_file" -eq 1 ]; then
+    plan_result_file_path="$arg"
+    expect_plan_result_file=0
+    continue
+  fi
+
   if [ "$expect_pull_request_number" -eq 1 ]; then
     if printf '%s' "$arg" | grep -Eq '^#?[1-9][0-9]*$'; then
       pull_request_source="#$arg"
@@ -284,6 +302,24 @@ for arg in "$@"; do
     --walkthrough-file=*)
       walkthrough_file_path="${arg#--walkthrough-file=}"
       ;;
+    --plan)
+      expect_plan_file=1
+      ;;
+    --plan=*)
+      plan_file_path="${arg#--plan=}"
+      ;;
+    --plan-file)
+      expect_plan_file=1
+      ;;
+    --plan-file=*)
+      plan_file_path="${arg#--plan-file=}"
+      ;;
+    --plan-result-file)
+      expect_plan_result_file=1
+      ;;
+    --plan-result-file=*)
+      plan_result_file_path="${arg#--plan-result-file=}"
+      ;;
     -*)
       ;;
     *)
@@ -345,10 +381,35 @@ if [ -n "$walkthrough_file_path" ]; then
   esac
 fi
 
+if [ -n "$plan_file_path" ]; then
+  case "$plan_file_path" in
+    /*) ;;
+    *) plan_file_path="$PWD/$plan_file_path" ;;
+  esac
+  if [ ! -f "$plan_file_path" ] || ! printf '%s' "$plan_file_path" | grep -Eiq '\.md$'; then
+    printf '%s\n' "codiff: plan file not found or not Markdown: $plan_file_path" >&2
+    exit 1
+  fi
+fi
+
+if [ -n "$plan_result_file_path" ]; then
+  case "$plan_result_file_path" in
+    /*) ;;
+    *) plan_result_file_path="$PWD/$plan_result_file_path" ;;
+  esac
+fi
+
 open_codiff() {
   # Prepend optional flags in reverse of their final order so the resulting
   # argument list reads: --codex-session --claude-session --opencode-session
-  # --agent --walkthrough-context --walkthrough-file <trailing>.
+  # --agent --walkthrough-context --walkthrough-file --plan-file
+  # --plan-result-file <trailing>.
+  if [ -n "$plan_result_file_path" ]; then
+    set -- --plan-result-file "$plan_result_file_path" "$@"
+  fi
+  if [ -n "$plan_file_path" ]; then
+    set -- --plan-file "$plan_file_path" "$@"
+  fi
   if [ -n "$walkthrough_file_path" ]; then
     set -- --walkthrough-file "$walkthrough_file_path" "$@"
   fi
@@ -374,7 +435,40 @@ open_codiff() {
   open -n "$app_path" --args "$@"
 }
 
-if [ -n "$pull_request_source" ] && [ -n "$pull_request_provider" ] && [ "$walkthrough" -eq 1 ]; then
+if [ -n "$plan_file_path" ]; then
+  if [ -z "$plan_result_file_path" ]; then
+    plan_result_directory="$(mktemp -d "${TMPDIR:-/tmp}/codiff-plan-result.XXXXXX")"
+    plan_result_file_path="$plan_result_directory/result.json"
+    trap 'rm -rf "$plan_result_directory"' EXIT INT TERM
+  fi
+  open_codiff "$repository_path"
+  plan_open_attempts=0
+  plan_app_pid=""
+  while :; do
+    if [ -s "$plan_result_file_path" ]; then
+      if grep -Eq '"status"[[:space:]]*:[[:space:]]*"(done|closed)"' "$plan_result_file_path"; then
+        printf 'CODIFF_PLAN_RESULT '
+        cat "$plan_result_file_path"
+        exit 0
+      fi
+      if grep -Eq '"status"[[:space:]]*:[[:space:]]*"canceled"' "$plan_result_file_path"; then
+        exit 2
+      fi
+      if grep -Eq '"status"[[:space:]]*:[[:space:]]*"open"' "$plan_result_file_path"; then
+        plan_app_pid="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$plan_result_file_path")"
+      fi
+    fi
+    if [ -n "$plan_app_pid" ] && ! kill -0 "$plan_app_pid" 2>/dev/null; then
+      exit 2
+    fi
+    plan_open_attempts=$((plan_open_attempts + 1))
+    if [ -z "$plan_app_pid" ] && [ "$plan_open_attempts" -ge 300 ]; then
+      printf '%s\n' "codiff: the app did not open the plan within 15 seconds." >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
+elif [ -n "$pull_request_source" ] && [ -n "$pull_request_provider" ] && [ "$walkthrough" -eq 1 ]; then
   open_codiff --walkthrough "$pull_request_provider" "$pull_request_source" "$repository_path"
 elif [ -n "$pull_request_source" ] && [ -n "$pull_request_provider" ]; then
   open_codiff "$pull_request_provider" "$pull_request_source" "$repository_path"

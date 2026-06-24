@@ -1,3 +1,4 @@
+import type { MarkdownEditorHandle } from '@nkzw/mdx-editor';
 import { CaretDownIcon as CaretDown } from '@phosphor-icons/react/CaretDown';
 import { ChatCircleIcon as ChatCircle } from '@phosphor-icons/react/ChatCircle';
 import { CheckIcon as Check } from '@phosphor-icons/react/Check';
@@ -19,13 +20,14 @@ import { CodeView, type CodeViewHandle, WorkerPoolContextProvider } from '@pierr
 import { Copy as LucideCopy } from 'lucide-react';
 import {
   Fragment,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -70,6 +72,7 @@ import {
   getItemId,
   getMarkdownPreviewContents,
   getVisibleDiffSections,
+  isMarkdownFilePath,
   shouldLoadDiffSectionContents,
 } from '../../lib/diff.ts';
 import { getItemVersion } from '../../lib/item-version.ts';
@@ -102,10 +105,18 @@ import {
   type CommitDetailsFile,
 } from './CommitDetails.tsx';
 import { Gravatar } from './Gravatar.tsx';
+import {
+  RepositoryMarkdownEditor,
+  type MarkdownDocumentEditorHandle,
+} from './MarkdownDocumentEditor.tsx';
 import { DiffLineCountBadge } from './Sidebar.tsx';
 import { useCopiedState } from './useCopiedState.ts';
 
 const emptyMarkdownPreviewSectionIds = new Set<string>();
+const MarkdownEditor = lazy(async () => {
+  const module = await import('@nkzw/mdx-editor');
+  return { default: module.MarkdownEditor };
+});
 
 function CopyFilePathButton({ path }: { path: string }) {
   const [copied, markCopied] = useCopiedState(1600);
@@ -162,7 +173,7 @@ function CodeViewHeader({
   onLoadSection: (file: ChangedFile, section: DiffSection) => void;
   onOpenFile: (file: ChangedFile) => void;
   onToggleCollapsed: (file: ChangedFile, isCollapsed: boolean, reviewKey: string) => void;
-  onToggleMarkdownPreview: (section: DiffSection) => void;
+  onToggleMarkdownPreview: (file: ChangedFile, section: DiffSection) => void;
   onToggleViewed: (file: ChangedFile, isViewed: boolean, reviewIdentity: ReviewIdentity) => void;
   readOnly: boolean;
 }) {
@@ -233,7 +244,7 @@ function CodeViewHeader({
         <button
           aria-pressed={isMarkdownPreview}
           className={`codiff-markdown-button${isMarkdownPreview ? ' active' : ''}`}
-          onClick={() => onToggleMarkdownPreview(section)}
+          onClick={() => onToggleMarkdownPreview(file, section)}
           title={isMarkdownPreview ? 'View as Diff' : 'View as Markdown'}
           type="button"
         >
@@ -347,21 +358,35 @@ const formatBytes = (size: number) => {
 function MarkdownPreview({
   addedLines,
   contents,
+  editable,
   layoutKey,
+  onEditorRef,
   onLayoutReady,
+  path,
   sectionId,
 }: {
   addedLines: ReadonlySet<number>;
   contents: string;
+  editable: boolean;
   layoutKey: string;
+  onEditorRef: (sectionId: string, editor: MarkdownDocumentEditorHandle | null) => void;
   onLayoutReady: (sectionId: string) => void;
+  path: string;
   sectionId: string;
 }) {
   useLayoutEffect(() => {
     onLayoutReady(sectionId);
   }, [layoutKey, onLayoutReady, sectionId]);
 
-  return (
+  return editable ? (
+    <div className="codiff-markdown-preview editable">
+      <RepositoryMarkdownEditor
+        onHeightChange={() => onLayoutReady(sectionId)}
+        path={path}
+        ref={(editor) => onEditorRef(sectionId, editor)}
+      />
+    </div>
+  ) : (
     <div className="codiff-markdown-preview">
       {renderMarkdown(contents, { addedLines, highlightCode: true })}
     </div>
@@ -631,7 +656,7 @@ function ReviewCommentEditor({
   comment,
   displayName,
   focusCommentId,
-  focusTextareaRef,
+  focusEditorRef,
   identity,
   isPullRequest,
   keymap,
@@ -639,6 +664,7 @@ function ReviewCommentEditor({
   onCommentBlur,
   onCommentFocus,
   onDeleteComment,
+  onHeightChange,
   onSubmitComment,
   onUpdateComment,
 }: {
@@ -647,7 +673,7 @@ function ReviewCommentEditor({
   comment: ReviewComment;
   displayName: string;
   focusCommentId: string | null;
-  focusTextareaRef: (node: HTMLTextAreaElement | null) => void;
+  focusEditorRef: (node: MarkdownEditorHandle | null) => void;
   identity: GitIdentity | null;
   isPullRequest: boolean;
   keymap: CodiffKeymap;
@@ -655,6 +681,7 @@ function ReviewCommentEditor({
   onCommentBlur: (comment: ReviewComment, body: string) => void;
   onCommentFocus: (comment: ReviewComment) => void;
   onDeleteComment: (commentId: string) => void;
+  onHeightChange: () => void;
   onSubmitComment: (commentId: string) => void;
   onUpdateComment: (commentId: string, body: string) => void;
 }) {
@@ -703,8 +730,7 @@ function ReviewCommentEditor({
     return withCommentBody(comment, draft);
   }, [comment, draft, onUpdateComment]);
   const handleChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      const draft = event.currentTarget.value;
+    (draft: string) => {
       setDraftState((current) => ({
         commentBody: comment.body,
         commentId: comment.id,
@@ -738,7 +764,7 @@ function ReviewCommentEditor({
   }, [draftComment, onCommentFocus]);
 
   const handleKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (matchesShortcut(event, keymap, 'submitComment')) {
         if (isPullRequest && commentCanSubmit) {
           event.preventDefault();
@@ -782,6 +808,20 @@ function ReviewCommentEditor({
       keymap,
       onDeleteComment,
     ],
+  );
+  const previousHeightRef = useRef<number | null>(null);
+  const handleHeightChange = useCallback(
+    (height: number) => {
+      if (previousHeightRef.current == null) {
+        previousHeightRef.current = height;
+        return;
+      }
+      if (previousHeightRef.current !== height) {
+        previousHeightRef.current = height;
+        onHeightChange();
+      }
+    },
+    [onHeightChange],
   );
 
   return (
@@ -847,20 +887,30 @@ function ReviewCommentEditor({
               </button>
             ) : null}
           </div>
-          <textarea
-            aria-label={`Comment on ${comment.filePath} ${getReviewCommentLineLabel(comment)}`}
-            className={`review-comment-input${comment.isReadOnly ? ' read-only' : ''}`}
-            onBlur={handleBlur}
-            onChange={handleChange}
-            onFocus={handleFocus}
-            onKeyDown={handleKeyDown}
-            placeholder="Write a review comment…"
-            readOnly={comment.isReadOnly}
-            ref={comment.id === focusCommentId ? focusTextareaRef : undefined}
-            rows={3}
-            spellCheck
-            value={draft}
-          />
+          <Suspense
+            fallback={
+              <div className={`review-comment-input${comment.isReadOnly ? ' read-only' : ''}`} />
+            }
+          >
+            <MarkdownEditor
+              ariaLabel={`Comment on ${comment.filePath} ${getReviewCommentLineLabel(comment)}`}
+              className="review-comment-markdown-editor"
+              colorScheme="inherit"
+              contentClassName={`review-comment-input${comment.isReadOnly ? ' read-only' : ''}`}
+              density="compact"
+              onBlur={handleBlur}
+              onChange={handleChange}
+              onFocus={handleFocus}
+              onHeightChange={handleHeightChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Write a review comment…"
+              readOnly={comment.isReadOnly}
+              ref={comment.id === focusCommentId ? focusEditorRef : undefined}
+              spellCheck
+              value={draft}
+              variant="embedded"
+            />
+          </Suspense>
           {comment.remoteSubmit?.status === 'error' ? (
             <div className="review-comment-error">{comment.remoteSubmit.error}</div>
           ) : null}
@@ -905,6 +955,7 @@ function ReviewAnnotation({
   onCommentBlur,
   onCommentFocus,
   onDeleteComment,
+  onHeightChange,
   onSubmitComment,
   onUpdateComment,
 }: {
@@ -921,12 +972,13 @@ function ReviewAnnotation({
   onCommentBlur: (comment: ReviewComment, body: string) => void;
   onCommentFocus: (comment: ReviewComment) => void;
   onDeleteComment: (commentId: string) => void;
+  onHeightChange: () => void;
   onSubmitComment: (commentId: string) => void;
   onUpdateComment: (commentId: string, body: string) => void;
 }) {
-  const focusTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const setFocusTextareaRef = useCallback((node: HTMLTextAreaElement | null) => {
-    focusTextareaRef.current = node;
+  const focusEditorRef = useRef<MarkdownEditorHandle>(null);
+  const setFocusEditorRef = useCallback((node: MarkdownEditorHandle | null) => {
+    focusEditorRef.current = node;
   }, []);
   const annotationComments = annotation.metadata.commentIds
     .map((commentId) => comments.find((comment) => comment.id === commentId))
@@ -936,7 +988,7 @@ function ReviewAnnotation({
 
   useEffect(() => {
     if (hasFocusedComment) {
-      focusTextareaRef.current?.focus();
+      focusEditorRef.current?.focus();
     }
   }, [focusCommentId, focusCommentRequest, hasFocusedComment]);
 
@@ -957,7 +1009,7 @@ function ReviewAnnotation({
             comment={comment}
             displayName={displayName}
             focusCommentId={focusCommentId}
-            focusTextareaRef={setFocusTextareaRef}
+            focusEditorRef={setFocusEditorRef}
             identity={identity}
             isPullRequest={isPullRequest}
             key={comment.id}
@@ -966,6 +1018,7 @@ function ReviewAnnotation({
             onCommentBlur={onCommentBlur}
             onCommentFocus={onCommentFocus}
             onDeleteComment={onDeleteComment}
+            onHeightChange={onHeightChange}
             onSubmitComment={onSubmitComment}
             onUpdateComment={onUpdateComment}
           />
@@ -1320,6 +1373,7 @@ export function ReviewCodeView({
   onLoadImageContent,
   onLoadSection,
   onOpenFile,
+  onRefreshMarkdown,
   onSelectPathFromScroll,
   onSubmitComment,
   onToggleCollapsed,
@@ -1366,6 +1420,7 @@ export function ReviewCodeView({
   onLoadImageContent?: (request: DiffImageContentRequest) => Promise<DiffImageContentResult>;
   onLoadSection: (file: ChangedFile, section: DiffSection) => void;
   onOpenFile: (file: ChangedFile) => void;
+  onRefreshMarkdown?: (file: ChangedFile, section: DiffSection) => Promise<boolean>;
   onSelectPathFromScroll: (viewer: CodeViewInstance) => void;
   onSubmitComment: (commentId: string) => void;
   onToggleCollapsed: (file: ChangedFile, isCollapsed: boolean, reviewKey: string) => void;
@@ -1382,6 +1437,8 @@ export function ReviewCodeView({
   wordWrap: boolean;
 }) {
   const codeViewRef = useRef<CodeViewHandle<ReviewAnnotationMetadata>>(null);
+  const markdownEditorRefs = useRef(new Map<string, MarkdownDocumentEditorHandle>());
+  const refreshingMarkdownSectionsRef = useRef(new Set<string>());
   const deferredTimersRef = useRef<Set<number>>(new Set());
   const handledScrollRequestRef = useRef<number | null>(null);
   const handledHunkNavRef = useRef<number | null>(hunkNavigation?.request ?? null);
@@ -1390,8 +1447,22 @@ export function ReviewCodeView({
   const highlightFrameRef = useRef<number | null>(null);
   const ignoreNextLineSelectionEndRef = useRef(false);
   const navigatedSelectionRef = useRef<CodeViewLineSelection | null>(null);
+  const initialMarkdownFiles =
+    files.length > 0
+      ? files
+      : (blocks?.map((block) => block.file).filter((file): file is ChangedFile => file != null) ??
+        []);
+  const initialEditableMarkdownSections =
+    !isReadOnly && source.type === 'working-tree'
+      ? initialMarkdownFiles.flatMap((file) => {
+          const section = file.sections.at(-1);
+          return file.status !== 'deleted' && isMarkdownFilePath(file.path) && section
+            ? [section.id]
+            : [];
+        })
+      : [];
   const [markdownPreviewSections, setMarkdownPreviewSections] = useState<ReadonlySet<string>>(
-    () => new Set(initialMarkdownPreviewSectionIds),
+    () => new Set([...initialMarkdownPreviewSectionIds, ...initialEditableMarkdownSections]),
   );
   // Markdown previews render inside a CodeView item. Change the item version once after the
   // preview appears so CodeView measures the preview height instead of the placeholder height.
@@ -1399,6 +1470,9 @@ export function ReviewCodeView({
     Readonly<Record<string, number>>
   >({});
   const [imagePreviewLayoutPassBySection, setImagePreviewLayoutPassBySection] = useState<
+    Readonly<Record<string, number>>
+  >({});
+  const [commentLayoutPassByItem, setCommentLayoutPassByItem] = useState<
     Readonly<Record<string, number>>
   >({});
   const [selectedLines, setSelectedLines] = useState<CodeViewLineSelection | null>(null);
@@ -1418,6 +1492,7 @@ export function ReviewCodeView({
       ? commitDetailsCollapseState.collapsed
       : false;
   const stickyHeaderFrameRef = useRef<number | null>(null);
+
   const reviewBlocks = useMemo(() => blocks ?? createFileReviewBlocks(files), [blocks, files]);
   const commentLookup = useMemo(() => {
     const map = new Map<string, ReviewComment>();
@@ -1448,6 +1523,13 @@ export function ReviewCodeView({
     setImagePreviewLayoutPassBySection((current) => ({
       ...current,
       [sectionId]: (current[sectionId] ?? 0) + 1,
+    }));
+  }, []);
+
+  const markCommentLayoutChanged = useCallback((itemId: string) => {
+    setCommentLayoutPassByItem((current) => ({
+      ...current,
+      [itemId]: (current[itemId] ?? 0) + 1,
     }));
   }, []);
 
@@ -1543,11 +1625,17 @@ export function ReviewCodeView({
         const canRenderImage =
           !isReadOnly && onLoadImageContent != null && canRenderImagePreview(file.path, section);
         const canRenderMarkdown = markdownPreview != null;
+        const canEditMarkdown =
+          canRenderMarkdown &&
+          !isReadOnly &&
+          source.type === 'working-tree' &&
+          file.status !== 'deleted' &&
+          file.sections.at(-1)?.id === section.id;
         const isMarkdownPreview = canRenderMarkdown && markdownPreviewSections.has(section.id);
         const isSelected = block.fileSelected ?? block.selected ?? selectedPath === file.path;
         const reviewVersionPrefix = `${itemVersionByKey[reviewKey] ?? 0}:${block.id}:${
           reviewIdentity.fingerprint
-        }:${reviewKey}:${section.id}`;
+        }:${reviewKey}:${section.id}:${commentLayoutPassByItem[id] ?? 0}`;
         const sectionStateVersionKey = `${isCollapsed ? 'collapsed' : 'open'}:${
           isViewed ? 'viewed' : 'pending'
         }:${index}:${isSelected ? 'selected' : 'idle'}:${fontLayoutKey}:${
@@ -1590,6 +1678,7 @@ export function ReviewCodeView({
 
         nextItemMetadata.set(id, {
           blockId: block.id,
+          canEditMarkdown,
           canRenderMarkdown,
           comments: sectionComments,
           file,
@@ -1644,6 +1733,7 @@ export function ReviewCodeView({
                 metadata: {
                   addedLines: markdownPreview.addedLines,
                   contents: markdownPreview.contents,
+                  editable: canEditMarkdown,
                   layoutKey: markdownPreviewLayoutKey,
                   path: file.path,
                   sectionId: section.id,
@@ -1743,6 +1833,7 @@ export function ReviewCodeView({
     commitDetailsCollapsed,
     commitDetailsLayoutPass,
     commitMetadata,
+    commentLayoutPassByItem,
     commentsBySection,
     diffLineHeight,
     diffStyle,
@@ -1756,6 +1847,7 @@ export function ReviewCodeView({
     reviewBlocks,
     selectedPath,
     showWhitespace,
+    source.type,
     viewed,
     reviewIdentityByPath,
     walkthroughNotes,
@@ -2016,9 +2108,41 @@ export function ReviewCodeView({
     [clearCommentLineHighlight, onDeleteComment],
   );
 
+  const setMarkdownEditorRef = useCallback(
+    (sectionId: string, editor: MarkdownDocumentEditorHandle | null) => {
+      if (editor) {
+        markdownEditorRefs.current.set(sectionId, editor);
+      } else {
+        markdownEditorRefs.current.delete(sectionId);
+      }
+    },
+    [],
+  );
+
   const toggleMarkdownPreview = useCallback(
-    (section: DiffSection) => {
+    async (file: ChangedFile, section: DiffSection) => {
       clearCommentLineHighlight();
+      if (
+        markdownPreviewSections.has(section.id) &&
+        source.type === 'working-tree' &&
+        file.status !== 'deleted'
+      ) {
+        if (refreshingMarkdownSectionsRef.current.has(section.id)) {
+          return;
+        }
+        refreshingMarkdownSectionsRef.current.add(section.id);
+        try {
+          const editor = markdownEditorRefs.current.get(section.id);
+          if (editor && !(await editor.flush())) {
+            return;
+          }
+          if (onRefreshMarkdown && !(await onRefreshMarkdown(file, section))) {
+            return;
+          }
+        } finally {
+          refreshingMarkdownSectionsRef.current.delete(section.id);
+        }
+      }
       setMarkdownPreviewSections((current) => {
         const next = new Set(current);
         if (next.has(section.id)) {
@@ -2029,7 +2153,7 @@ export function ReviewCodeView({
         return next;
       });
     },
-    [clearCommentLineHighlight],
+    [clearCommentLineHighlight, markdownPreviewSections, onRefreshMarkdown, source.type],
   );
 
   const workerPoolOptions = useMemo(
@@ -2502,8 +2626,11 @@ export function ReviewCodeView({
           <MarkdownPreview
             addedLines={annotation.metadata.addedLines}
             contents={annotation.metadata.contents}
+            editable={annotation.metadata.editable}
             layoutKey={annotation.metadata.layoutKey}
+            onEditorRef={setMarkdownEditorRef}
             onLayoutReady={markMarkdownPreviewLayoutReady}
+            path={annotation.metadata.path}
             sectionId={annotation.metadata.sectionId}
           />
         );
@@ -2540,6 +2667,7 @@ export function ReviewCodeView({
           onCommentBlur={blurComment}
           onCommentFocus={focusComment}
           onDeleteComment={deleteComment}
+          onHeightChange={() => markCommentLayoutChanged(item.id)}
           onSubmitComment={onSubmitComment}
           onUpdateComment={onUpdateComment}
         />
@@ -2561,12 +2689,14 @@ export function ReviewCodeView({
       markCommitDetailsLayoutReady,
       markMarkdownPreviewLayoutReady,
       markImagePreviewLayoutReady,
+      markCommentLayoutChanged,
       onAskCodex,
       onLoadImageContent,
       onSubmitComment,
       onUpdateComment,
       renderComments,
       scrollToCommitDetailsDestination,
+      setMarkdownEditorRef,
       source,
     ],
   );

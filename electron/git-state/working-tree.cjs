@@ -404,8 +404,8 @@ const readWorkingTreePathSignature = async (repoRoot, path) => {
   }
 };
 
-/** @param {string} repoRoot */
-const readWorkingTreeChangeSignatures = async (repoRoot) => {
+/** @param {string} repoRoot @param {Iterable<string>} [additionalPaths] */
+const readWorkingTreeChangeSignatures = async (repoRoot, additionalPaths = []) => {
   const status = parseStatus(await git(repoRoot, ['status', '--porcelain=v1', '-z', '-uall']));
   const signatures = new Map();
 
@@ -420,11 +420,13 @@ const readWorkingTreeChangeSignatures = async (repoRoot) => {
 
     signatures.set(item.path, await readWorkingTreePathSignature(repoRoot, item.path));
   }
+  for (const path of additionalPaths) {
+    if (!signatures.has(path)) {
+      signatures.set(path, await readWorkingTreePathSignature(repoRoot, path));
+    }
+  }
 
-  return [...signatures.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, signature]) => signature)
-    .join('\0');
+  return [...signatures.entries()].sort(([left], [right]) => left.localeCompare(right));
 };
 
 /** @param {string} repoRoot @param {ReadonlyArray<string>} args */
@@ -457,15 +459,18 @@ const readGitIdentity = async (launchPath) => {
   };
 };
 
-/** @param {string} launchPath */
-const readRepositoryChangeSignature = async (launchPath) => {
+/** @param {string} launchPath @param {Iterable<string>} [additionalPaths] */
+const readRepositoryChangeSignature = async (launchPath, additionalPaths = []) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
-  const [head, workingTree] = await Promise.all([
+  const [head, workingTreeSignatures] = await Promise.all([
     gitOrEmpty(repoRoot, ['rev-parse', '--verify', 'HEAD']),
-    readWorkingTreeChangeSignatures(repoRoot),
+    readWorkingTreeChangeSignatures(repoRoot, additionalPaths),
   ]);
+  const workingTree = workingTreeSignatures.map(([, signature]) => signature).join('\0');
 
   return {
+    head,
+    pathSignatures: Object.fromEntries(workingTreeSignatures),
     root: repoRoot,
     signature: getFingerprint([head, workingTree].join('\0')),
   };

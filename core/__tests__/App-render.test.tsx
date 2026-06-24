@@ -18,6 +18,7 @@ import type {
   ChangedFile,
   CommitMetadata,
   NarrativeWalkthrough,
+  PlanReview,
   RepositoryState,
   ReviewSource,
 } from '../types.ts';
@@ -91,6 +92,7 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     reason: 'Unavailable in tests.',
     status: 'unavailable' as const,
   })),
+  completePlan: vi.fn(async () => {}),
   createWalkthroughCommit: vi.fn(async () => ({
     hash: '0000000000000000000000000000000000000000',
     status: 'committed' as const,
@@ -119,10 +121,18 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     repositoryPathProvided: true,
     walkthrough: false,
   })),
+  getMarkdownDocument: vi.fn(async ({ kind, path }) => ({
+    content: '# Plan\n',
+    id: `${kind}:${path}`,
+    kind,
+    path,
+    version: 'version',
+  })),
   getNarrativeWalkthrough: vi.fn(async () => ({
     reason: 'Unavailable in tests.',
     status: 'unavailable' as const,
   })),
+  getPlanReview: vi.fn(async () => null),
   getPreferences: vi.fn(async () => ({
     agentBackend: 'codex' as const,
     claudeModel: defaultSettings.claudeModel,
@@ -163,14 +173,28 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     path: '/usr/local/bin/codiff',
   })),
   isWindowFullScreen: vi.fn(async () => false),
+  markPlanReady: vi.fn(async () => {}),
   onConfigChanged: vi.fn(() => () => {}),
   onCopyPendingCommentsRequest: vi.fn(() => () => {}),
   onFindInDiffs: vi.fn(() => () => {}),
+  onMarkdownDocumentChanged: vi.fn(() => () => {}),
+  onPlanCloseRequested: vi.fn(() => () => {}),
   onRepositoryChanged: vi.fn(() => () => {}),
   onWindowFullScreenChanged: vi.fn(() => () => {}),
   openConfigFile: vi.fn(async () => {}),
   openFile: vi.fn(async () => {}),
   resetCodeFontSize: vi.fn(async () => {}),
+  saveMarkdownDocument: vi.fn(async (request) => ({
+    document: {
+      content: request.content,
+      id: `${request.kind}:${request.path}`,
+      kind: request.kind,
+      path: request.path,
+      version: 'next-version',
+    },
+    status: 'saved' as const,
+  })),
+  savePlanReview: vi.fn(async (review) => review),
   setDiffStyle: vi.fn(async () => {}),
   setShowOutdated: vi.fn(async () => {}),
   setWordWrap: vi.fn(async () => {}),
@@ -1228,6 +1252,532 @@ test('a walkthrough file loads even without the walkthrough launch flag', async 
 
     expect(getNarrativeWalkthrough).toHaveBeenCalledTimes(1);
     expect(container.querySelector('.walkthrough-error')).toBeNull();
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
+test('plan mode opens the Markdown editor without loading repository state', async () => {
+  const getRepositoryState = vi.fn(async () => repositoryState);
+  const completePlan = vi.fn(async (_review: PlanReview, _status: 'closed' | 'done') => {});
+  const markPlanReady = vi.fn(async () => {});
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+  const scrollIntoView = vi.fn();
+  HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  const storedReview = {
+    document: {
+      id: 'stale-plan-id',
+      path: '/tmp/old-plan.md',
+      version: 'stale-version',
+    },
+    threads: [
+      {
+        anchor: {
+          block: {
+            fingerprint: 'heading-fingerprint',
+            path: [1],
+            text: 'Execute this plan',
+            type: 'heading',
+          },
+          kind: 'block',
+          version: 1,
+        },
+        createdAt: '2026-06-24T00:00:00.000Z',
+        createdBy: {
+          email: 'reviewer@example.com',
+          id: 'reviewer@example.com',
+          name: 'Reviewer',
+        },
+        id: 'thread-1',
+        messages: [
+          {
+            author: {
+              email: 'reviewer@example.com',
+              id: 'reviewer@example.com',
+              name: 'Reviewer',
+            },
+            body: 'Keep the rollout steps explicit.',
+            createdAt: '2026-06-24T00:00:00.000Z',
+            id: 'message-1',
+            updatedAt: '2026-06-24T00:00:00.000Z',
+          },
+        ],
+        status: 'open',
+        updatedAt: '2026-06-24T00:00:00.000Z',
+      },
+      {
+        anchor: {
+          block: {
+            fingerprint: 'list-item-fingerprint',
+            path: [2, 0],
+            text: 'First',
+            type: 'listitem',
+          },
+          kind: 'block',
+          version: 1,
+        },
+        createdAt: '2026-06-24T00:01:00.000Z',
+        createdBy: {
+          email: 'reviewer@example.com',
+          id: 'reviewer@example.com',
+          name: 'Reviewer',
+        },
+        id: 'empty-thread',
+        messages: [
+          {
+            author: {
+              email: 'reviewer@example.com',
+              id: 'reviewer@example.com',
+              name: 'Reviewer',
+            },
+            body: '   ',
+            createdAt: '2026-06-24T00:01:00.000Z',
+            id: 'empty-message',
+            updatedAt: '2026-06-24T00:01:00.000Z',
+          },
+        ],
+        status: 'open',
+        updatedAt: '2026-06-24T00:01:00.000Z',
+      },
+    ],
+    version: 1,
+  } satisfies PlanReview;
+  window.codiff = createCodiffMock({
+    completePlan,
+    getLaunchOptions: vi.fn(async () => ({
+      planFile: '/tmp/plan.md',
+      planResultFile: '/tmp/result.json',
+      repositoryPathProvided: true,
+      walkthrough: false,
+    })),
+    getMarkdownDocument: vi.fn(async () => ({
+      content:
+        '---\ntitle: Execute this plan\ndraft: true\n---\n\n# Execute this plan\n\n- First\n- Second\n\n```sh\nvp test\n```\n',
+      id: 'plan:/tmp/plan.md',
+      kind: 'plan' as const,
+      path: '/tmp/plan.md',
+      version: 'plan-version',
+    })),
+    getPlanReview: vi.fn(async () => storedReview),
+    getRepositoryState,
+    markPlanReady,
+  });
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.plan-shell')).not.toBeNull();
+    });
+    expect(getRepositoryState).not.toHaveBeenCalled();
+    expect(markPlanReady).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('.plan-title')?.textContent).toContain('plan.md');
+    await waitFor(() => {
+      expect(container.querySelector('[data-editor-type="frontmatter"]')).not.toBeNull();
+    });
+    expect(container.querySelector('.mdx-editor-content h2')).toBeNull();
+    expect(container.querySelectorAll('.mdx-editor-content ul > li')).toHaveLength(2);
+    await waitFor(() => {
+      expect(container.querySelector('.cm-content')).not.toBeNull();
+    });
+    expect(container.querySelector('.cm-gutters')).toBeNull();
+    expect(container.querySelector('.cm-content')?.textContent).toContain('vp test');
+    await waitFor(() => {
+      expect(container.querySelector('.plan-comment-thread')?.textContent).toContain(
+        'Keep the rollout steps explicit.',
+      );
+    });
+    const commentTargetButton = container.querySelector<HTMLButtonElement>('.plan-comment-target');
+    expect(commentTargetButton?.textContent).toBe('Heading · Execute this plan');
+    expect(commentTargetButton?.disabled).toBe(false);
+    await act(async () => {
+      commentTargetButton?.click();
+    });
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+    scrollIntoView.mockClear();
+    expect(container.querySelector('[data-mdx-annotation-block~="thread-1"]')).not.toBeNull();
+    expect(container.querySelectorAll('li[data-mdx-comment-block-type="listitem"]')).toHaveLength(
+      2,
+    );
+
+    const planWorkspace = container.querySelector<HTMLElement>('.plan-workspace');
+    const editorContent = container.querySelector<HTMLElement>('.mdx-editor-content');
+    const commentBlock = container.querySelectorAll<HTMLElement>(
+      'li[data-mdx-comment-block-type="listitem"]',
+    )[1];
+    expect(planWorkspace).not.toBeNull();
+    expect(editorContent).not.toBeNull();
+    expect(commentBlock).toBeDefined();
+    planWorkspace!.getBoundingClientRect = () => ({
+      bottom: 700,
+      height: 650,
+      left: 100,
+      right: 1100,
+      toJSON: () => {},
+      top: 50,
+      width: 1000,
+      x: 100,
+      y: 50,
+    });
+    editorContent!.style.paddingRight = '24px';
+    editorContent!.getBoundingClientRect = () => ({
+      bottom: 650,
+      height: 550,
+      left: 120,
+      right: 1020,
+      toJSON: () => {},
+      top: 100,
+      width: 900,
+      x: 120,
+      y: 100,
+    });
+    commentBlock!.getBoundingClientRect = () => ({
+      bottom: 224,
+      height: 24,
+      left: 144,
+      right: 996,
+      toJSON: () => {},
+      top: 200,
+      width: 852,
+      x: 144,
+      y: 200,
+    });
+    await act(async () => {
+      commentBlock!.dispatchEvent(new MouseEvent('pointermove', { bubbles: true }));
+    });
+    await waitFor(() => {
+      expect(container.querySelector('.plan-comment-affordance')).not.toBeNull();
+    });
+    const commentAffordance = container.querySelector<HTMLElement>('.plan-comment-affordance')!;
+    expect(commentAffordance.dataset.mdxCommentButton).toBe('');
+    expect(commentAffordance.style.getPropertyValue('--plan-comment-left')).toBe('896px');
+    expect(commentAffordance.style.getPropertyValue('--plan-comment-width')).toBe('48px');
+    expect(commentAffordance.querySelector(':scope > .plan-comment-add')).not.toBeNull();
+    await act(async () => {
+      editorContent!.dispatchEvent(
+        new MouseEvent('pointerleave', { relatedTarget: commentAffordance }),
+      );
+    });
+    expect(container.querySelector('.plan-comment-affordance')).not.toBeNull();
+    await act(async () => {
+      commentAffordance.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: editorContent }),
+      );
+    });
+    expect(container.querySelector('.plan-comment-affordance')).not.toBeNull();
+    await act(async () => {
+      commentAffordance.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: planWorkspace }),
+      );
+    });
+    expect(container.querySelector('.plan-comment-affordance')).toBeNull();
+    await act(async () => {
+      container
+        .querySelectorAll<HTMLElement>('li[data-mdx-comment-block-type="listitem"]')[0]!
+        .dispatchEvent(new MouseEvent('pointermove', { bubbles: true }));
+      commentBlock!.dispatchEvent(new MouseEvent('pointermove', { bubbles: true }));
+    });
+    const addCommentButton = container.querySelector<HTMLButtonElement>('.plan-comment-add');
+    expect(addCommentButton).not.toBeNull();
+    await act(async () => {
+      addCommentButton!.click();
+    });
+    const activeComment = container.querySelector<HTMLElement>('.plan-comment-thread.active');
+    expect(activeComment).not.toBeNull();
+    expect(activeComment!.closest<HTMLElement>('.plan-comment-position')?.style.top).not.toBe(
+      '0px',
+    );
+    const activeCommentDelete =
+      activeComment!.querySelector<HTMLButtonElement>('.review-comment-delete');
+    expect(activeCommentDelete).not.toBeNull();
+    await act(async () => {
+      activeCommentDelete!.click();
+    });
+
+    const commentRail = container.querySelector<HTMLElement>('.plan-comment-rail-scroll');
+    const commentPosition = container.querySelector<HTMLElement>('.plan-comment-position');
+    const annotatedBlock = container.querySelector<HTMLElement>(
+      '[data-mdx-annotation-block~="thread-1"]',
+    );
+    expect(commentRail).not.toBeNull();
+    expect(commentPosition).not.toBeNull();
+    expect(annotatedBlock).not.toBeNull();
+    commentRail!.style.overflowY = 'auto';
+    commentRail!.getBoundingClientRect = () => ({
+      bottom: 300,
+      height: 200,
+      left: 0,
+      right: 400,
+      toJSON: () => {},
+      top: 100,
+      width: 400,
+      x: 0,
+      y: 100,
+    });
+    commentPosition!.getBoundingClientRect = () => ({
+      bottom: 360,
+      height: 100,
+      left: 0,
+      right: 400,
+      toJSON: () => {},
+      top: 260,
+      width: 400,
+      x: 0,
+      y: 260,
+    });
+    const scrollCommentRail = vi.fn();
+    commentRail!.scrollTo = scrollCommentRail;
+    await act(async () => {
+      annotatedBlock!.click();
+    });
+    await waitFor(() => {
+      expect(scrollCommentRail).toHaveBeenCalledWith({ behavior: 'smooth', top: 68 });
+    });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    const deleteButtons = container.querySelectorAll<HTMLButtonElement>('.review-comment-delete');
+    expect(deleteButtons).toHaveLength(2);
+    await act(async () => {
+      deleteButtons[1]!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      deleteButtons[1]!.click();
+    });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.plan-done-button')?.click();
+    });
+    await waitFor(() => {
+      expect(completePlan).toHaveBeenCalledTimes(1);
+    });
+    expect(completePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        document: {
+          id: 'plan:/tmp/plan.md',
+          path: '/tmp/plan.md',
+          version: 'plan-version',
+        },
+        threads: [
+          expect.objectContaining({
+            id: 'thread-1',
+            messages: [
+              expect.objectContaining({
+                body: 'Keep the rollout steps explicit.',
+              }),
+            ],
+          }),
+        ],
+        version: 1,
+      }),
+      'done',
+    );
+    expect(completePlan.mock.calls[0]?.[0].threads).toHaveLength(1);
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    container.remove();
+  }
+});
+
+test('closing plan mode flushes and returns a closed handoff', async () => {
+  const completePlan = vi.fn(async (_review: PlanReview, _status: 'closed' | 'done') => {});
+  let blockPlanReviewSave = false;
+  let resolvePlanReviewSave: (() => void) | null = null;
+  const savePlanReview = vi.fn((review: PlanReview) => {
+    if (!blockPlanReviewSave) {
+      return Promise.resolve(review);
+    }
+    return new Promise<PlanReview>((resolveSave) => {
+      resolvePlanReviewSave = () => resolveSave(review);
+    });
+  });
+  let requestClose: (() => void) | null = null;
+  window.codiff = createCodiffMock({
+    completePlan,
+    getLaunchOptions: vi.fn(async () => ({
+      planFile: '/tmp/plan.md',
+      planResultFile: '/tmp/result.json',
+      repositoryPathProvided: true,
+      walkthrough: false,
+    })),
+    getMarkdownDocument: vi.fn(async () => ({
+      content: '# Execute this plan\n',
+      id: 'plan:/tmp/plan.md',
+      kind: 'plan' as const,
+      path: '/tmp/plan.md',
+      version: 'plan-version',
+    })),
+    getPlanReview: vi.fn(
+      async (): Promise<PlanReview> => ({
+        document: {
+          id: 'plan:/tmp/plan.md',
+          path: '/tmp/plan.md',
+          version: 'plan-version',
+        },
+        threads: [
+          {
+            anchor: {
+              block: {
+                fingerprint: 'heading-fingerprint',
+                path: [0],
+                text: 'Execute this plan',
+                type: 'heading',
+              },
+              kind: 'block',
+              version: 1,
+            },
+            createdAt: '2026-06-24T00:00:00.000Z',
+            createdBy: {
+              email: 'reviewer@example.com',
+              id: 'reviewer@example.com',
+              name: 'Reviewer',
+            },
+            id: 'thread-1',
+            messages: [
+              {
+                author: {
+                  email: 'reviewer@example.com',
+                  id: 'reviewer@example.com',
+                  name: 'Reviewer',
+                },
+                body: 'Keep this requirement.',
+                createdAt: '2026-06-24T00:00:00.000Z',
+                id: 'message-1',
+                updatedAt: '2026-06-24T00:00:00.000Z',
+              },
+            ],
+            status: 'open',
+            updatedAt: '2026-06-24T00:00:00.000Z',
+          },
+        ],
+        version: 1,
+      }),
+    ),
+    onPlanCloseRequested: vi.fn((callback) => {
+      requestClose = callback;
+      return () => {
+        requestClose = null;
+      };
+    }),
+    savePlanReview,
+  });
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.plan-shell')).not.toBeNull();
+      expect(requestClose).not.toBeNull();
+      expect(container.querySelector('.plan-comment-thread')).not.toBeNull();
+    });
+    await act(async () => {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 75));
+    });
+    savePlanReview.mockClear();
+    blockPlanReviewSave = true;
+    await act(async () => {
+      requestClose?.();
+    });
+    await waitFor(() => {
+      expect(savePlanReview).toHaveBeenCalledTimes(1);
+    });
+    expect(completePlan).not.toHaveBeenCalled();
+    expect(
+      [...container.querySelectorAll<HTMLElement>('[contenteditable]')].map((element) =>
+        element.getAttribute('contenteditable'),
+      ),
+    ).toEqual(['false', 'false']);
+    expect(container.querySelector<HTMLButtonElement>('.review-comment-delete')?.disabled).toBe(
+      true,
+    );
+    await act(async () => {
+      resolvePlanReviewSave?.();
+    });
+    await waitFor(() => {
+      expect(completePlan).toHaveBeenCalledTimes(1);
+    });
+    expect(completePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        document: {
+          id: 'plan:/tmp/plan.md',
+          path: '/tmp/plan.md',
+          version: 'plan-version',
+        },
+        threads: [
+          expect.objectContaining({
+            id: 'thread-1',
+          }),
+        ],
+        version: 1,
+      }),
+      'closed',
+    );
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
+test('plan mode recovers from an unreadable review sidecar', async () => {
+  const markPlanReady = vi.fn(async () => {});
+  window.codiff = createCodiffMock({
+    getLaunchOptions: vi.fn(async () => ({
+      planFile: '/tmp/plan.md',
+      planResultFile: '/tmp/result.json',
+      repositoryPathProvided: true,
+      walkthrough: false,
+    })),
+    getMarkdownDocument: vi.fn(async () => ({
+      content: '# Execute this plan\n',
+      id: 'plan:/tmp/plan.md',
+      kind: 'plan' as const,
+      path: '/tmp/plan.md',
+      version: 'plan-version',
+    })),
+    getPlanReview: vi.fn(async () => {
+      throw new Error('Invalid plan review.');
+    }),
+    markPlanReady,
+  });
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.plan-shell')).not.toBeNull();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Invalid plan review.',
+    );
+    expect(container.querySelector('[contenteditable="true"]')).not.toBeNull();
+    expect(markPlanReady).toHaveBeenCalledTimes(1);
   } finally {
     if (root) {
       await act(async () => root?.unmount());

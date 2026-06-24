@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { createRequire } from 'node:module';
-import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
 import { formatHelpText, parseArguments, resolvePullRequestUrl } from './arguments.js';
+import { waitForPlanResult } from './plan-result.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -122,6 +124,7 @@ const run = async () => {
     commitRef,
     opencodeSessionId,
     piSessionId,
+    planFilePath,
     pullRequestNumber,
     pullRequestProvider,
     range,
@@ -132,6 +135,17 @@ const run = async () => {
     walkthroughFilePath,
   } = parsedArguments;
   let { pullRequestUrl } = parsedArguments;
+
+  if (planFilePath && (!existsSync(planFilePath) || !/\.md$/i.test(planFilePath))) {
+    process.stderr.write(`codiff: plan file not found or not Markdown: ${planFilePath}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  if (planFilePath && share) {
+    process.stderr.write('codiff: --plan cannot be combined with --share.\n');
+    process.exitCode = 1;
+    return;
+  }
 
   if (!pullRequestUrl && pullRequestNumber != null) {
     try {
@@ -207,6 +221,10 @@ const run = async () => {
     process.exit(1);
   }
 
+  const planResultDirectory = planFilePath
+    ? mkdtempSync(join(tmpdir(), 'codiff-plan-result-'))
+    : null;
+  const planResultPath = planResultDirectory ? join(planResultDirectory, 'result.json') : '';
   const childEnv = {
     ...process.env,
     CODIFF_AGENT_BACKEND: agentBackend ?? '',
@@ -216,6 +234,8 @@ const run = async () => {
     CODIFF_CODEX_SESSION_ID: codexSessionId ?? '',
     CODIFF_OPENCODE_SESSION_ID: opencodeSessionId ?? '',
     CODIFF_PI_SESSION_ID: piSessionId ?? '',
+    CODIFF_PLAN_FILE: planFilePath ?? '',
+    CODIFF_PLAN_RESULT_FILE: planResultPath,
     CODIFF_PULL_REQUEST_URL: pullRequestUrl ?? '',
     CODIFF_REVIEW_PROVIDER: pullRequestProvider ?? '',
     CODIFF_RANGE: range ? `${range.base}${range.symmetric ? '...' : '..'}${range.head}` : '',
@@ -242,6 +262,23 @@ const run = async () => {
   });
 
   child.unref();
+  if (planResultDirectory) {
+    try {
+      const result = await waitForPlanResult(planResultPath, child);
+      if (result.status === 'canceled') {
+        process.exitCode = 2;
+      } else {
+        process.stdout.write(`CODIFF_PLAN_RESULT ${JSON.stringify(result)}\n`);
+      }
+    } catch (error) {
+      process.stderr.write(
+        `${error instanceof Error ? error.message : 'Codiff could not open the plan.'}\n`,
+      );
+      process.exitCode = 1;
+    } finally {
+      rmSync(planResultDirectory, { force: true, recursive: true });
+    }
+  }
 };
 
 run();

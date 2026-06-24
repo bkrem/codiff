@@ -1,3 +1,4 @@
+import type { MarkdownAnnotationAnchor } from '@nkzw/mdx-editor';
 import type { CodiffDiffStyle } from './config/types.ts';
 
 export type DiffSection = {
@@ -153,6 +154,68 @@ export type CodiffFeatureFlags = {
   walkthroughSharing: boolean;
 };
 
+export type CodiffMarkdownDocument = {
+  content: string;
+  id: string;
+  kind: 'plan' | 'repository';
+  path: string;
+  version: string;
+};
+
+export type SaveMarkdownDocumentRequest = {
+  baseVersion: string;
+  content: string;
+  kind: CodiffMarkdownDocument['kind'];
+  path: string;
+};
+
+export type SaveMarkdownDocumentResult =
+  | {
+      document: CodiffMarkdownDocument;
+      status: 'conflict';
+    }
+  | {
+      document: CodiffMarkdownDocument;
+      status: 'saved';
+    };
+
+export type PlanCommentAuthor = {
+  avatarUrl?: string;
+  email?: string;
+  id: string;
+  name: string;
+};
+
+export type PlanCommentMessage = {
+  author: PlanCommentAuthor;
+  body: string;
+  createdAt: string;
+  id: string;
+  updatedAt: string;
+};
+
+export type PlanCommentThread = {
+  anchor: MarkdownAnnotationAnchor;
+  createdAt: string;
+  createdBy: PlanCommentAuthor;
+  id: string;
+  messages: ReadonlyArray<PlanCommentMessage>;
+  status: 'open' | 'resolved';
+  updatedAt: string;
+};
+
+export type PlanReview = {
+  document: {
+    id: string;
+    path: string;
+    version: string;
+  };
+  threads: ReadonlyArray<PlanCommentThread>;
+  version: 1;
+};
+
+export type PlanHandoffStatus = 'closed' | 'done';
+
 export type SharedWalkthroughSnapshot = {
   branch: string | null;
   codiffVersion: string;
@@ -221,6 +284,10 @@ export type CodiffLaunchOptions = {
   codexSessionId?: string;
   opencodeSessionId?: string;
   piSessionId?: string;
+  /** Exact Markdown file opened by the blocking plan handoff. */
+  planFile?: string;
+  /** Result file used to resume the waiting agent process. */
+  planResultFile?: string;
   repositoryPathProvided: boolean;
   source?: ReviewSource;
   walkthrough: boolean;

@@ -1,14 +1,14 @@
 ---
 name: codiff
-description: Author a narrative Codiff walkthrough JSON, then open it in Codiff or upload it and return a share URL. Use when the user writes "$codiff" or "/codiff", "$codiff share", "show me codiff", "open Codiff", "share a Codiff walkthrough", "generate a walkthrough link", or asks to review the current change as a guided narrative.
+description: Open Codiff for a narrative code walkthrough, a blocking plan handoff, or a shared walkthrough URL. Use when the user writes "$codiff", "/codiff", "$codiff plan", "$codiff share", "show me codiff", "open Codiff", or asks to review a change or edit a plan in Codiff.
 metadata:
-  short-description: Generate, open, or share a Codiff walkthrough
+  short-description: Review code or hand off a plan in Codiff
 ---
 
 # Codiff
 
-Author a **narrative walkthrough** of the current change as a JSON document. Then either open
-it in the Codiff desktop app or upload it and return an immutable web URL.
+Use Codiff either to review a **narrative walkthrough** of a code change or to hand a Markdown
+plan to the user for visual editing before execution.
 
 You write the JSON yourself because you already hold the conversation that produced the
 change. Codiff owns the format and authoring guidance, so this skill only handles the handoff.
@@ -17,11 +17,40 @@ change. Codiff owns the format and authoring guidance, so this skill only handle
 
 - Use **share mode** when the request includes `share`, `upload`, `link`, `URL`, `web`, or
   browser wording, including `$codiff share`.
+- Use **plan mode** for `$codiff plan` or when the user explicitly asks to edit or approve a
+  plan in Codiff before execution.
 - Use **desktop mode** for plain `$codiff`, `/codiff`, "open Codiff", or "show me Codiff".
 - In share mode, only pass `--open` when the user explicitly asks to open the resulting
   walkthrough in a browser. Otherwise return the URL without opening it.
 
-## Workflow
+## Plan Mode
+
+1. Write the complete proposed plan to a Markdown file. Use a unique temporary file outside the
+   repository unless the user named a canonical plan file.
+2. Make the intended next action explicit in the document. The user should be able to edit,
+   remove, or reorder any part of the plan.
+3. Open the blocking handoff:
+
+   ```bash
+   node scripts/open-codiff.mjs --plan /tmp/codiff-plan-<id>.md
+   ```
+
+4. Wait for Codiff to return. `status: "done"` means the user clicked **Done**. `status: "closed"`
+   means the user closed the window after Codiff flushed the file and comments. A canceled handoff
+   means the app could not complete the handoff and must not be treated as approval.
+5. Read the `CODIFF_PLAN_RESULT` JSON emitted when Codiff closes. Re-read the entire Markdown file
+   and process every unresolved thread in `review.threads`. Treat edits, additions, removals,
+   reordered steps, and comments as user direction. Preserve detached comments and use their
+   quoted anchor context.
+6. For `status: "done"`, execute the edited plan when the next action is clear. For
+   `status: "closed"`, continue only when `documentChanged` is true or unresolved comments contain
+   user direction; otherwise treat the close as cancellation. If the feedback is materially
+   ambiguous, ask one focused question before changing code.
+
+The edited Markdown file is the feedback. Do not require comments, annotations, or a separate
+approval document.
+
+## Walkthrough Workflow
 
 1. **Get the current guidance from Codiff.** It explains the data model and prints the JSON
    schema:
@@ -78,5 +107,6 @@ change. Codiff owns the format and authoring guidance, so this skill only handle
    Codiff validates and repairs the document against the live diff, so anchors that drift
    are pinned to a real section rather than dropped.
 
-Emit JSON only into the temporary file. In desktop mode, do not summarize the conversation
-back to the user. In share mode, respond with the URL printed by the command.
+Emit walkthrough JSON only into the temporary file. In desktop walkthrough mode, do not
+summarize the conversation back to the user. In share mode, respond with the URL printed by the
+command. In plan mode, continue from the edited Markdown after the blocking handoff returns.

@@ -156,6 +156,17 @@ const getSourceKey = (repositoryRoot, source = { type: 'working-tree' }) => {
 /** @param {string} repositoryPath @param {Partial<CodiffLaunchOptions>} [launchOptions] */
 const getWindowIdentity = (repositoryPath, launchOptions = {}) => {
   const repositoryRoot = resolveRepositoryRoot(repositoryPath);
+  if (launchOptions.planFile) {
+    const planPath = getRealPath(launchOptions.planFile);
+    const resultPath = launchOptions.planResultFile
+      ? getRealPath(launchOptions.planResultFile)
+      : 'standalone';
+    return {
+      key: `plan:${planPath}\0${resultPath}`,
+      repositoryRoot,
+      sourceKey: `plan:${planPath}`,
+    };
+  }
   const implicitWalkthroughHead =
     launchOptions.walkthrough &&
     !launchOptions.walkthroughFile &&

@@ -160,6 +160,12 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
       'pi-session': {
         type: 'string',
       },
+      'plan-file': {
+        type: 'string',
+      },
+      'plan-result-file': {
+        type: 'string',
+      },
       'walkthrough-context': {
         type: 'string',
       },
@@ -255,6 +261,8 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
   const envClaudeSessionId = useEnvironment ? process.env.CODIFF_CLAUDE_SESSION_ID || '' : '';
   const envOpenCodeSessionId = useEnvironment ? process.env.CODIFF_OPENCODE_SESSION_ID || '' : '';
   const envPiSessionId = useEnvironment ? process.env.CODIFF_PI_SESSION_ID || '' : '';
+  const envPlanFilePath = useEnvironment ? process.env.CODIFF_PLAN_FILE || '' : '';
+  const envPlanResultFilePath = useEnvironment ? process.env.CODIFF_PLAN_RESULT_FILE || '' : '';
   const envAgentBackend = useEnvironment ? process.env.CODIFF_AGENT_BACKEND || '' : '';
   const envWalkthroughContextPath = useEnvironment
     ? process.env.CODIFF_WALKTHROUGH_CONTEXT || ''
@@ -275,6 +283,14 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
   const piSessionId =
     (typeof values['pi-session'] === 'string' ? values['pi-session'] : '') ||
     envPiSessionId ||
+    undefined;
+  const planFilePath =
+    (typeof values['plan-file'] === 'string' ? values['plan-file'] : '') ||
+    envPlanFilePath ||
+    undefined;
+  const planResultFilePath =
+    (typeof values['plan-result-file'] === 'string' ? values['plan-result-file'] : '') ||
+    envPlanResultFilePath ||
     undefined;
   const rawAgentBackend =
     (typeof values.agent === 'string' ? values.agent : '') || envAgentBackend || '';
@@ -312,6 +328,8 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
       ...(codexSessionId ? { codexSessionId } : {}),
       ...(opencodeSessionId ? { opencodeSessionId } : {}),
       ...(piSessionId ? { piSessionId } : {}),
+      ...(planFilePath ? { planFile: resolve(planFilePath) } : {}),
+      ...(planResultFilePath ? { planResultFile: resolve(planResultFilePath) } : {}),
       repositoryPathProvided,
       source:
         sourceRange && sourcePullRequestNumber == null
@@ -404,7 +422,8 @@ const getInitialRepositoryPath = (
     !environment.CODIFF_REPOSITORY_PATH &&
     !launchOptions.repositoryPathProvided &&
     !launchOptions.source &&
-    !launchOptions.walkthrough
+    !launchOptions.walkthrough &&
+    !launchOptions.planFile
   ) {
     return resolve(lastRepositoryPath);
   }

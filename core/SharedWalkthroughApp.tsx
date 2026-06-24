@@ -27,6 +27,7 @@ import type {
 } from './lib/app-types.ts';
 import { DEFAULT_PADDING } from './lib/code-view-options.ts';
 import {
+  fileHasVisibleDiff,
   formatTreeLineCount,
   getDiffLineCount,
   getDiffLineCountTitle,
@@ -34,7 +35,7 @@ import {
   getItemId,
   isMarkdownFilePath,
 } from './lib/diff.ts';
-import { compactPath, fileTreeSort, statusForTree } from './lib/files.ts';
+import { compactPath, fileTreeSort, fuzzyMatches, sortFiles, statusForTree } from './lib/files.ts';
 import { getReviewCommentsFromState } from './lib/review-comments.ts';
 import {
   updateReviewIdentityCollapsed,
@@ -219,6 +220,7 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
     `${snapshot.repository.root}:${getSourceKey(snapshot.repository.source)}`,
   );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [itemVersionByKey, setItemVersionByKey] = useState<Record<string, number>>({});
   const [selectedPath, setSelectedPath] = useState<string | null>(
     () => snapshot.files[0]?.path ?? null,
@@ -227,6 +229,19 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
   const [treeScrollTarget, setTreeScrollTarget] = useState<ReviewScrollTarget | null>(null);
   const [viewed, setViewed] = useState<Record<string, string>>({});
   const reviewComments = useMemo(() => getSnapshotReviewComments(snapshot), [snapshot]);
+  const visibleFiles = useMemo(
+    () =>
+      sortFiles(snapshot.files).filter(
+        (file) =>
+          fuzzyMatches(file.path, fileSearchQuery) &&
+          fileHasVisibleDiff(file, snapshot.preferences.showWhitespace),
+      ),
+    [fileSearchQuery, snapshot.files, snapshot.preferences.showWhitespace],
+  );
+  const visibleSelectedPath =
+    selectedPath && visibleFiles.some((file) => file.path === selectedPath)
+      ? selectedPath
+      : (visibleFiles[0]?.path ?? null);
   const initialMarkdownPreviewSectionIds = useMemo(() => {
     const nonGeneratedFiles = snapshot.files.filter(
       (file) => !isGeneratedWalkthroughPath(file.path),
@@ -307,15 +322,15 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
   }, []);
   const updateSelectedPathFromScroll = useCallback(
     (viewer: CodeViewInstance) => {
-      if (snapshot.files.length === 0) {
+      if (visibleFiles.length === 0) {
         return;
       }
 
       const activationTop = viewer.getScrollTop() + DEFAULT_PADDING;
-      let nextPath = snapshot.files[0]?.path ?? null;
+      let nextPath = visibleFiles[0]?.path ?? null;
       let nextDistance = Number.NEGATIVE_INFINITY;
 
-      for (const file of snapshot.files) {
+      for (const file of visibleFiles) {
         const section = getFirstVisibleSection(file, snapshot.preferences.showWhitespace);
         const itemTop = section ? viewer.getTopForItem(getItemId(section)) : undefined;
         if (itemTop == null) {
@@ -333,7 +348,7 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
         setSelectedPath((current) => (current === nextPath ? current : nextPath));
       }
     },
-    [snapshot.files, snapshot.preferences.showWhitespace],
+    [snapshot.preferences.showWhitespace, visibleFiles],
   );
 
   const diffLineHeight = getCodeFontLineHeight(
@@ -417,6 +432,17 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
             </div>
           </div>
         </div>
+        <div className="sidebar-search-row">
+          <input
+            aria-label="Filter changed files"
+            className="sidebar-search"
+            onChange={(event) => setFileSearchQuery(event.currentTarget.value)}
+            placeholder="Filter files"
+            spellCheck={false}
+            type="search"
+            value={fileSearchQuery}
+          />
+        </div>
         <div aria-label="Review order" className="sidebar-mode-toggle" role="tablist">
           <button
             aria-selected={sidebarMode === 'tree'}
@@ -437,15 +463,15 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
         </div>
         {sidebarMode === 'tree' ? (
           <SharedFileTree
-            files={snapshot.files}
+            files={visibleFiles}
             onActivatePath={activateTreePath}
-            selectedPath={selectedPath}
+            selectedPath={visibleSelectedPath}
             showWhitespace={snapshot.preferences.showWhitespace}
           />
         ) : (
           <NarrativeSidebar
             allowCommit={false}
-            files={snapshot.files}
+            files={visibleFiles}
             navigation={navigation}
             showWhitespace={snapshot.preferences.showWhitespace}
             walkthrough={sharedWalkthrough}
@@ -455,16 +481,25 @@ export function SharedWalkthroughApp({ snapshot }: { snapshot: SharedWalkthrough
       <div aria-hidden className="sidebar-resizer" />
       <main className="review">
         {sidebarMode === 'tree' ? (
-          <ReviewCodeView
-            {...commonReviewProps}
-            allowViewedToggle
-            files={snapshot.files}
-            forceExpandedPaths={emptyPaths}
-            onSelectPathFromScroll={updateSelectedPathFromScroll}
-            scrollTarget={treeScrollTarget}
-            selectedPath={selectedPath}
-            walkthroughNotes={emptyWalkthroughNotes}
-          />
+          visibleFiles.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-panel squircle">
+                <strong>No matching files</strong>
+                <span>{fileSearchQuery}</span>
+              </div>
+            </div>
+          ) : (
+            <ReviewCodeView
+              {...commonReviewProps}
+              allowViewedToggle
+              files={visibleFiles}
+              forceExpandedPaths={emptyPaths}
+              onSelectPathFromScroll={updateSelectedPathFromScroll}
+              scrollTarget={treeScrollTarget}
+              selectedPath={visibleSelectedPath}
+              walkthroughNotes={emptyWalkthroughNotes}
+            />
+          )
         ) : (
           <NarrativeWalkthroughView
             allowCommit={false}

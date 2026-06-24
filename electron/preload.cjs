@@ -17,6 +17,7 @@ const codiff = {
   askReviewAssistant: (request) => ipcRenderer.invoke('codiff:askReviewAssistant', request),
   createWalkthroughCommit: (request) =>
     ipcRenderer.invoke('codiff:createWalkthroughCommit', request),
+  completePlan: (review, status) => ipcRenderer.invoke('codiff:completePlan', review, status),
   updateWalkthroughCommitMessage: (request) =>
     ipcRenderer.invoke('codiff:updateWalkthroughCommitMessage', request),
   getAgentSkillStatus: () => ipcRenderer.invoke('codiff:getAgentSkillStatus'),
@@ -27,7 +28,9 @@ const codiff = {
   getDiffImageContent: (request) => ipcRenderer.invoke('codiff:getDiffImageContent', request),
   getGitIdentity: () => ipcRenderer.invoke('codiff:getGitIdentity'),
   getLaunchOptions: () => ipcRenderer.invoke('codiff:getLaunchOptions'),
+  getMarkdownDocument: (request) => ipcRenderer.invoke('codiff:getMarkdownDocument', request),
   getPreferences: () => ipcRenderer.invoke('codiff:getPreferences'),
+  getPlanReview: () => ipcRenderer.invoke('codiff:getPlanReview'),
   getRepositoryHistory: (limit, source) =>
     ipcRenderer.invoke('codiff:getRepositoryHistory', limit, source),
   getRepositoryState: (source) => ipcRenderer.invoke('codiff:getRepositoryState', source),
@@ -37,6 +40,7 @@ const codiff = {
   installTerminalHelper: () => ipcRenderer.invoke('codiff:installTerminalHelper'),
   increaseCodeFontSize: () => ipcRenderer.invoke('codiff:increaseCodeFontSize'),
   isWindowFullScreen: () => ipcRenderer.invoke('codiff:isWindowFullScreen'),
+  markPlanReady: () => ipcRenderer.invoke('codiff:markPlanReady'),
   onConfigChanged: (callback) => {
     /** @param {Electron.IpcRendererEvent} _event @param {import('../core/config/types.ts').CodiffConfig} nextConfig */
     const listener = (_event, nextConfig) => callback(nextConfig);
@@ -67,6 +71,16 @@ const codiff = {
     ipcRenderer.on('codiff:findInDiffs', listener);
     return () => ipcRenderer.removeListener('codiff:findInDiffs', listener);
   },
+  onMarkdownDocumentChanged: (callback) => {
+    const listener = (_event, change) => callback(change);
+    ipcRenderer.on('codiff:markdownDocumentChanged', listener);
+    return () => ipcRenderer.removeListener('codiff:markdownDocumentChanged', listener);
+  },
+  onPlanCloseRequested: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('codiff:planCloseRequested', listener);
+    return () => ipcRenderer.removeListener('codiff:planCloseRequested', listener);
+  },
   onWindowFullScreenChanged: (callback) => {
     /** @param {Electron.IpcRendererEvent} _event @param {boolean} isFullScreen */
     const listener = (_event, isFullScreen) => callback(Boolean(isFullScreen));
@@ -86,6 +100,8 @@ const codiff = {
   setWordWrap: (value) => ipcRenderer.invoke('codiff:setWordWrap', value),
   shareWalkthrough: (snapshot) => ipcRenderer.invoke('codiff:shareWalkthrough', snapshot),
   resetCodeFontSize: () => ipcRenderer.invoke('codiff:resetCodeFontSize'),
+  saveMarkdownDocument: (request) => ipcRenderer.invoke('codiff:saveMarkdownDocument', request),
+  savePlanReview: (review) => ipcRenderer.invoke('codiff:savePlanReview', review),
   showInFolder: (path) => ipcRenderer.invoke('codiff:showInFolder', path),
   submitPullRequestComment: (request) =>
     ipcRenderer.invoke('codiff:submitPullRequestComment', request),

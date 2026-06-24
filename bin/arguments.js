@@ -46,6 +46,12 @@ export const flagDefinitions = [
     type: 'string',
   },
   {
+    argument: '<file>',
+    description: 'Edit a Markdown plan and wait until it is handed back.',
+    name: 'plan',
+    type: 'string',
+  },
+  {
     description: 'Generate and share a walkthrough, then print its URL; use HEAD when clean.',
     name: 'share',
     type: 'boolean',
@@ -89,6 +95,7 @@ export const usageExamples = [
   { command: "codiff '#75'", description: 'Review pull request #75.' },
   { command: 'codiff pr 75', description: 'Review pull request #75 (alternate syntax).' },
   { command: 'codiff mr 75', description: 'Review GitLab merge request !75.' },
+  { command: 'codiff --plan plan.md', description: 'Edit a plan and wait for handoff.' },
   { command: 'codiff -w', description: 'Walk through local changes, or HEAD when clean.' },
   { command: 'codiff -w a1b2c3d', description: 'Generate a narrative walkthrough for a commit.' },
   { command: 'codiff --share', description: 'Share local changes, or HEAD when clean.' },
@@ -230,6 +237,7 @@ export const parseArguments = (args) => {
   const opencodeSessionId =
     typeof values['opencode-session'] === 'string' ? values['opencode-session'] : null;
   const piSessionId = typeof values['pi-session'] === 'string' ? values['pi-session'] : null;
+  const planFilePath = typeof values.plan === 'string' ? values.plan : null;
   const agentBackend =
     values.agent === 'codex' ||
     values.agent === 'claude' ||
@@ -317,6 +325,7 @@ export const parseArguments = (args) => {
     ...(codexSessionId ? { codexSessionId } : {}),
     ...(opencodeSessionId ? { opencodeSessionId } : {}),
     ...(piSessionId ? { piSessionId } : {}),
+    ...(planFilePath ? { planFilePath: resolve(planFilePath) } : {}),
     ...(branchRef ? { branchRef } : {}),
     ...(range ? { range } : {}),
     commitRef,

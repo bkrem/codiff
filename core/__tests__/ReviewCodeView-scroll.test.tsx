@@ -22,8 +22,211 @@ import {
   type ReviewDiffBlock,
 } from './helpers/review-code-view.tsx';
 
+const markdownEditorMock = vi.hoisted(() => ({
+  flush: vi.fn<() => Promise<boolean>>(async () => true),
+}));
+
+vi.mock('../app/components/MarkdownDocumentEditor.tsx', async () => {
+  const React = await import('react');
+
+  return {
+    RepositoryMarkdownEditor: React.forwardRef(function MockRepositoryMarkdownEditor(
+      { path }: { path: string },
+      ref: React.ForwardedRef<{ flush: () => Promise<boolean> }>,
+    ) {
+      React.useImperativeHandle(ref, () => ({
+        flush: markdownEditorMock.flush,
+      }));
+      return <div aria-label={`Edit ${path}`}>Markdown editor</div>;
+    }),
+  };
+});
+
+vi.mock('@nkzw/mdx-editor', async () => {
+  const React = await import('react');
+  type MockEditorProps = {
+    ariaLabel?: string;
+    contentClassName?: string;
+    onBlur?: () => void;
+    onChange?: (value: string) => void;
+    onFocus?: () => void;
+    onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+    placeholder?: string;
+    readOnly?: boolean;
+    value?: string;
+  };
+
+  return {
+    MarkdownEditor: React.forwardRef<
+      {
+        focus: () => void;
+      },
+      MockEditorProps
+    >((props, ref) => {
+      const inputRef = React.useRef<HTMLTextAreaElement>(null);
+      React.useImperativeHandle(ref, () => ({
+        focus: () => inputRef.current?.focus(),
+      }));
+      return (
+        <textarea
+          aria-label={props.ariaLabel}
+          className={props.contentClassName}
+          onBlur={props.onBlur}
+          onChange={(event) => props.onChange?.(event.currentTarget.value)}
+          onFocus={props.onFocus}
+          onKeyDown={(event) =>
+            props.onKeyDown?.(event as unknown as React.KeyboardEvent<HTMLDivElement>)
+          }
+          placeholder={props.placeholder}
+          readOnly={props.readOnly}
+          ref={inputRef}
+          value={props.value}
+        />
+      );
+    }),
+  };
+});
+
 beforeEach(() => {
   resetCodeViewMock();
+  markdownEditorMock.flush.mockClear();
+  markdownEditorMock.flush.mockResolvedValue(true);
+});
+
+const createLoadedMarkdownFile = (contents: string, fingerprint: string) => {
+  const file = createChangedFileWithPatch(
+    'plan.md',
+    `diff --git a/plan.md b/plan.md\n@@ -1 +1 @@\n-# Original\n+${contents}`,
+  );
+  return {
+    ...file,
+    fingerprint,
+    sections: file.sections.map((section) => ({
+      ...section,
+      loadState: 'ready' as const,
+      newFile: {
+        contents,
+        name: file.path,
+      },
+      oldFile: {
+        contents: '# Original\n',
+        name: file.path,
+      },
+    })),
+  };
+};
+
+test('switching edited Markdown back to a diff flushes and refreshes it first', async () => {
+  const order: Array<string> = [];
+  const initialFile = createLoadedMarkdownFile('# Edited\n', 'plan.md:initial');
+  const refreshedFile = {
+    ...createLoadedMarkdownFile('# Saved\n', 'plan.md:refreshed'),
+  };
+
+  markdownEditorMock.flush.mockImplementation(async () => {
+    order.push('flush');
+    return true;
+  });
+
+  function Harness() {
+    const [file, setFile] = useState(initialFile);
+    return (
+      <ReviewCodeViewHarness
+        files={[file]}
+        onRefreshMarkdown={async () => {
+          order.push('refresh');
+          setFile(refreshedFile);
+          return true;
+        }}
+      />
+    );
+  }
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<Harness />);
+    });
+
+    expect(container.querySelector('[aria-label="Edit plan.md"]')).not.toBeNull();
+    const diffButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      ({ textContent }) => textContent === 'View as Diff',
+    );
+    expect(diffButton).not.toBeUndefined();
+
+    await act(async () => {
+      diffButton?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('[aria-label="Edit plan.md"]')).toBeNull();
+    });
+    expect(order).toEqual(['flush', 'refresh']);
+    expect(JSON.stringify(codeViewMock.lastItems)).toContain('# Saved');
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
+test('read-only Markdown previews highlight blocks containing added lines', async () => {
+  const sectionId = 'README.md:unstaged';
+  const file = {
+    fingerprint: 'markdown-preview-added-lines',
+    path: 'README.md',
+    sections: [
+      {
+        binary: false,
+        id: sectionId,
+        kind: 'unstaged',
+        loadState: 'ready',
+        newFile: {
+          contents: '# Title\n\nNew paragraph.\n',
+          name: 'README.md',
+        },
+        oldFile: {
+          contents: '# Title\n\nOld paragraph.\n',
+          name: 'README.md',
+        },
+        patch: '',
+      },
+    ],
+    status: 'modified',
+  } satisfies ChangedFile;
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <ReviewCodeViewHarness
+          files={[file]}
+          initialMarkdownPreviewSectionIds={new Set([sectionId])}
+          isReadOnly
+        />,
+      );
+    });
+
+    expect(
+      container.querySelector('.codiff-markdown-preview .codiff-markdown-added'),
+    ).not.toBeNull();
+    expect(container.querySelector('.codiff-markdown-added')?.textContent).toBe('New paragraph.');
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
 });
 
 test('walkthrough header chrome does not leak inline styles onto reused diff nodes', async () => {

@@ -3,17 +3,21 @@ packages:
 
 allowBuilds:
   '@google/genai': false
+  '@nkzw/mdx-editor': true
   '@swc/core': true
   electron: true
   electron-winstaller: true
   protobufjs: false
 blockExoticSubdeps: false
+minimumReleaseAgeExclude:
+  - '@nkzw/*'
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@^0.1.24
   vite-plus: ^0.1.24
   vitest: npm:@voidzero-dev/vite-plus-test@^0.1.24
 nodeLinker: hoisted
 onlyBuiltDependencies:
+  - '@nkzw/mdx-editor'
   - '@swc/core'
   - '@tailwindcss/oxide'
   - electron

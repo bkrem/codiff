@@ -3,6 +3,7 @@ import type {
   AgentSkillStatus,
   CodiffFeatureFlags,
   CodiffLaunchOptions,
+  CodiffMarkdownDocument,
   CodiffPreferences,
   DiffImageContentRequest,
   DiffImageContentResult,
@@ -10,11 +11,15 @@ import type {
   DiffSectionContentRequest,
   GitIdentity,
   NarrativeWalkthroughResult,
+  PlanHandoffStatus,
+  PlanReview,
   RepositoryHistory,
   RepositoryState,
   ReviewAssistantRequest,
   ReviewAssistantResult,
   ReviewSource,
+  SaveMarkdownDocumentRequest,
+  SaveMarkdownDocumentResult,
   SharedWalkthroughSnapshot,
   ShareWalkthroughResult,
   SubmitPullRequestCommentRequest,
@@ -33,6 +38,7 @@ declare global {
   interface Window {
     codiff: {
       askReviewAssistant: (request: ReviewAssistantRequest) => Promise<ReviewAssistantResult>;
+      completePlan: (review: PlanReview, status: PlanHandoffStatus) => Promise<void>;
       createWalkthroughCommit: (
         request: WalkthroughCommitRequest,
       ) => Promise<WalkthroughCommitResult>;
@@ -44,7 +50,12 @@ declare global {
       getFeatureFlags: () => Promise<CodiffFeatureFlags>;
       getGitIdentity: () => Promise<GitIdentity>;
       getLaunchOptions: () => Promise<CodiffLaunchOptions>;
+      getMarkdownDocument: (request: {
+        kind: CodiffMarkdownDocument['kind'];
+        path: string;
+      }) => Promise<CodiffMarkdownDocument>;
       getNarrativeWalkthrough: (source?: ReviewSource) => Promise<NarrativeWalkthroughResult>;
+      getPlanReview: () => Promise<PlanReview | null>;
       getPreferences: () => Promise<CodiffPreferences>;
       getRepositoryHistory: (limit?: number, source?: ReviewSource) => Promise<RepositoryHistory>;
       getRepositoryState: (source?: ReviewSource) => Promise<RepositoryState>;
@@ -53,14 +64,27 @@ declare global {
       installAgentSkill: () => Promise<AgentSkillStatus>;
       installTerminalHelper: () => Promise<TerminalHelperStatus>;
       isWindowFullScreen: () => Promise<boolean>;
+      markPlanReady: () => Promise<void>;
       onConfigChanged: (callback: (config: CodiffConfig) => void) => () => void;
       onCopyPendingCommentsRequest: (callback: () => string | Promise<string>) => () => void;
       onFindInDiffs: (callback: () => void) => () => void;
+      onMarkdownDocumentChanged: (
+        callback: (
+          change:
+            | { deleted: true; id: string }
+            | { deleted: false; document: CodiffMarkdownDocument; id: string },
+        ) => void,
+      ) => () => void;
+      onPlanCloseRequested: (callback: () => void) => () => void;
       onRepositoryChanged: (callback: (change: { root: string }) => void) => () => void;
       onWindowFullScreenChanged: (callback: (isFullScreen: boolean) => void) => () => void;
       openConfigFile: () => Promise<void>;
       openFile: (path: string) => Promise<void>;
       resetCodeFontSize: () => Promise<void>;
+      saveMarkdownDocument: (
+        request: SaveMarkdownDocumentRequest,
+      ) => Promise<SaveMarkdownDocumentResult>;
+      savePlanReview: (review: PlanReview) => Promise<PlanReview>;
       setDiffStyle: (value: CodiffPreferences['diffStyle']) => Promise<void>;
       setShowOutdated: (value: boolean) => Promise<void>;
       setWordWrap: (value: boolean) => Promise<void>;

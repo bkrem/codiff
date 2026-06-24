@@ -13,6 +13,8 @@ const { getInitialRepositoryPath, parseCommandLineArguments, parseGitHubRemoteUr
       launchPath: string,
       launchOptions: {
         codexSessionId?: string;
+        planFile?: string;
+        planResultFile?: string;
         repositoryPathProvided: boolean;
         source?:
           | { ref: string; type: 'branch' }
@@ -28,6 +30,8 @@ const { getInitialRepositoryPath, parseCommandLineArguments, parseGitHubRemoteUr
     parseCommandLineArguments: (commandLine: ReadonlyArray<string>) => {
       launchOptions: {
         codexSessionId?: string;
+        planFile?: string;
+        planResultFile?: string;
         repositoryPathProvided: boolean;
         source?:
           | { ref: string; type: 'branch' }
@@ -86,6 +90,27 @@ test('parses commit and walkthrough command-line options', () => {
       walkthrough: true,
     },
     pullRequestNumber: null,
+    repositoryPath: '/repo',
+  });
+});
+
+test('parses plan handoff command-line options', () => {
+  expect(
+    parseCommandLineArguments([
+      'codiff',
+      '--plan-file',
+      '/tmp/plan.md',
+      '--plan-result-file',
+      '/tmp/result.json',
+      '/repo',
+    ]),
+  ).toMatchObject({
+    launchOptions: {
+      planFile: '/tmp/plan.md',
+      planResultFile: '/tmp/result.json',
+      repositoryPathProvided: true,
+      walkthrough: false,
+    },
     repositoryPath: '/repo',
   });
 });
@@ -399,6 +424,18 @@ test('does not restore over explicit launch intent', async () => {
         {
           repositoryPathProvided: false,
           walkthrough: true,
+        },
+        lastRepositoryPath,
+        {},
+      ),
+    ).toBe('/fallback');
+    expect(
+      getInitialRepositoryPath(
+        '/fallback',
+        {
+          planFile: '/tmp/plan.md',
+          repositoryPathProvided: false,
+          walkthrough: false,
         },
         lastRepositoryPath,
         {},
