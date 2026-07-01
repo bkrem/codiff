@@ -12,8 +12,8 @@ blockExoticSubdeps: false
 minimumReleaseAgeExclude:
   - '@nkzw/*'
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@latest
-  vite-plus: latest
+  vite: npm:@voidzero-dev/vite-plus-core@^0.2.1
+  vite-plus: ^0.2.1
   vitest: 4.1.9
 nodeLinker: hoisted
 onlyBuiltDependencies:

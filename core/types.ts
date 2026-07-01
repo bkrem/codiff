@@ -55,6 +55,36 @@ export type PullRequestReviewStatus = {
   requestChanges?: PullRequestReviewActionStatus;
 };
 
+export type PullRequestMergeCheckStatus = 'failed' | 'neutral' | 'pending' | 'success';
+
+export type PullRequestMergeCheck = {
+  detail?: string;
+  label: string;
+  status: PullRequestMergeCheckStatus;
+  url?: string;
+};
+
+export type PullRequestMergeOptions = {
+  removeSourceBranch: boolean;
+  squash: boolean;
+};
+
+export type PullRequestMergeState = {
+  autoMergeEnabled: boolean;
+  canCancelAutoMerge: boolean;
+  canMerge: boolean;
+  canSetAutoMerge: boolean;
+  checks: ReadonlyArray<PullRequestMergeCheck>;
+  detailedStatus?: string;
+  forceRemoveSourceBranch: boolean;
+  mergeError?: string;
+  options: PullRequestMergeOptions;
+  reason?: string;
+  sha: string;
+  status: 'blocked' | 'checking' | 'closed' | 'merged' | 'ready' | 'waiting';
+  statusLabel: string;
+};
+
 export type ReviewSource =
   | {
       type: 'working-tree';
@@ -87,9 +117,12 @@ export type ReviewSource =
     }
   | {
       author?: ReviewAuthor;
+      canEditDescription?: boolean;
+      canEditTitle?: boolean;
       description?: string;
       headSha?: string;
       host?: string;
+      mergeState?: PullRequestMergeState;
       number?: number;
       owner?: string;
       projectPath?: string;

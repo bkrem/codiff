@@ -28,6 +28,9 @@
   :root {
     --app-bg: #f8f8f6;
     --code-bg: #ffffff;
+    --codiff-font-mono: 'Fira Code', monospace;
+    --codiff-font-sans:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --codiff-link: var(--tree-selection-focus);
     --danger: #a33a3a;
     --diff-addition: rgb(31 122 68);
@@ -47,6 +50,8 @@
     --tree-selection-bg: #c2e8ff50;
     --tree-selection-focus: #3d87f5;
     --viewed: rgb(31 122 68);
+    --font-mono: var(--codiff-font-mono);
+    --font-sans: var(--codiff-font-sans);
     color-scheme: light;
   }
 
@@ -1612,10 +1617,54 @@ html[data-codiff-platform='darwin'] .sidebar {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.codiff-source-description-header.editable-title {
+  grid-template-columns: 30px minmax(0, 1fr);
+}
+
+.codiff-source-description-title-cell {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  padding-top: 4px;
+}
+
+.codiff-source-description-title-cell .codiff-file-heading,
+.codiff-source-description-title-cell .codiff-file-path-row {
+  flex: 1;
+  width: 100%;
+}
+
 .codiff-file-path.source-description-title {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
+}
+
+.source-description-title-editor {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: block;
+  box-sizing: border-box;
+  height: 28px;
+  line-height: 28px;
+  margin: 0;
+  min-width: 0;
+  outline: 0;
+  overflow: hidden;
+  padding: 0;
+  resize: none;
+  width: 100%;
+}
+
+.source-description-title-editor:focus-visible {
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--tree-selection-focus) 72%, transparent);
+}
+
+.source-description-title-editor.has-error {
+  box-shadow: inset 0 -1px 0 var(--danger, #ef4444);
 }
 
 .source-description-review-actions {
@@ -1624,6 +1673,27 @@ html[data-codiff-platform='darwin'] .sidebar {
   flex: none;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.pull-request-merge-status-badge {
+  align-items: center;
+  background: transparent;
+  border: 1px solid rgb(127 127 127 / 0.18);
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+}
+
+.pull-request-merge-status-badge[data-status='merged'] {
+  border-color: color-mix(in srgb, var(--viewed) 44%, transparent);
+  color: var(--viewed);
+}
+
+.pull-request-merge-status-badge[data-status='closed'] {
+  border-color: color-mix(in srgb, var(--deleted) 38%, transparent);
+  color: var(--deleted);
 }
 
 .codiff-source-description-panel {
@@ -1637,8 +1707,21 @@ html[data-codiff-platform='darwin'] .sidebar {
   overflow: clip;
 }
 
+.codiff-source-description-panel,
+.merge-request-comments-source-description {
+  font-size: 14px;
+}
+
 .codiff-source-description-panel-body {
   background: var(--code-bg);
+}
+
+.codiff-source-description-footer {
+  padding: 0 8px 8px 50px;
+}
+
+.source-description-comment-anonymous + .codiff-source-description-footer {
+  padding-left: 8px;
 }
 
 .source-description-comment.review-comment {
@@ -1650,22 +1733,195 @@ html[data-codiff-platform='darwin'] .sidebar {
 }
 
 .source-description-author-header.review-comment-header {
+  font: 14px/1.3 var(--font-sans);
   grid-template-columns: minmax(0, 1fr);
 }
 
 .source-description-body.review-comment-body {
   background: color-mix(in srgb, var(--file-bg) 96%, var(--text) 2%);
+  font-size: 14px;
 }
 
 .source-description-markdown.codiff-markdown-preview:not(.editable) {
+  --mdx-editor-font-size: 14px;
+
   padding: 0;
 }
 
 .source-description-markdown.codiff-markdown-preview:not(.editable) :is(h1, h2, h3, h4, h5, h6) {
   border-bottom: none;
-  font-size: 15px;
+  font-size: 14px;
   margin: 14px 0 6px;
   padding-bottom: 0;
+}
+
+.source-description-markdown-editor {
+  --mdx-editor-font-size: 14px;
+  --mdx-editor-line-height: 1.55;
+}
+
+.source-description-markdown-editor .review-comment-input {
+  font: 14px/1.55 var(--font-sans);
+  min-height: 0;
+}
+
+.source-description-edit-shell.review-comment-edit-shell {
+  min-height: 0;
+}
+
+.source-description-edit-preview {
+  pointer-events: none;
+}
+
+.source-description-markdown-editor .mdx-editor-content > :last-child {
+  margin-bottom: 0;
+}
+
+.pull-request-merge-panel {
+  display: block;
+}
+
+.pull-request-merge-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pull-request-merge-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+}
+
+.pull-request-merge-summary.review-comment-header {
+  font: 14px/1.3 var(--font-sans);
+  width: 100%;
+}
+
+.pull-request-merge-options,
+.pull-request-merge-actions,
+.pull-request-merge-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pull-request-merge-requirements {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pull-request-merge-requirement {
+  color: var(--text);
+  font-family: var(--codiff-font-sans);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.pull-request-merge-requirement a {
+  color: inherit;
+  display: inline-flex;
+  text-decoration: none;
+  vertical-align: top;
+}
+
+.pull-request-merge-requirement a:hover {
+  color: var(--text);
+}
+
+.pull-request-merge-requirement-content {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  line-height: inherit;
+}
+
+.pull-request-merge-requirement-icon {
+  align-self: center;
+  flex: none;
+  margin-top: 1px;
+}
+
+.pull-request-merge-requirement-icon.success {
+  color: var(--viewed);
+}
+
+.pull-request-merge-requirement-icon.failed {
+  color: var(--deleted);
+}
+
+.pull-request-merge-requirement-text {
+  min-width: 0;
+}
+
+.pull-request-merge-controls {
+  border-top: 1px solid var(--file-border);
+  justify-content: flex-end;
+  padding: 8px;
+}
+
+.pull-request-merge-option {
+  align-items: center;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  font: 13px/1.45 var(--codiff-font-sans);
+  gap: 6px;
+  position: relative;
+}
+
+.pull-request-merge-input {
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.pull-request-merge-option:has(input:checked) .codiff-viewed-checkbox {
+  background: var(--viewed);
+  border-color: var(--viewed);
+}
+
+.pull-request-merge-option:has(input:focus-visible) .codiff-viewed-checkbox {
+  outline: 2px solid color-mix(in srgb, var(--viewed) 72%, white 12%);
+  outline-offset: 2px;
+}
+
+.pull-request-merge-option:has(input:disabled) {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.pull-request-merge-actions {
+  justify-content: flex-end;
+}
+
+.pull-request-merge-button {
+  font: 600 14px/1 var(--font-sans);
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.pull-request-merge-button.primary:not(:disabled) {
+  color: var(--viewed);
+}
+
+.pull-request-merge-button.cancel:not(:disabled) {
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .pull-request-merge-controls,
+  .pull-request-merge-actions {
+    justify-content: flex-start;
+  }
 }
 
 .merge-request-comments-view {
@@ -1675,7 +1931,7 @@ html[data-codiff-platform='darwin'] .sidebar {
   gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding: 12px 12px 48px;
+  padding: 11px 12px 48px;
 }
 
 .merge-request-comments-source-description {
@@ -2104,9 +2360,9 @@ html[data-codiff-platform='darwin'] .sidebar {
   --mdx-editor-bg: transparent;
   --mdx-editor-border: var(--file-border);
   --mdx-editor-code-bg: var(--inline-code-bg);
-  --mdx-editor-font: var(--font-sans);
+  --mdx-editor-font: var(--codiff-font-sans);
   --mdx-editor-hover: var(--hover-wash);
-  --mdx-editor-mono-font: var(--font-mono);
+  --mdx-editor-mono-font: var(--codiff-font-mono);
   --mdx-editor-muted: var(--muted);
   --mdx-editor-selection: var(--tree-selection-bg);
   --mdx-editor-text: var(--text);
@@ -2437,6 +2693,7 @@ html[data-codiff-platform='darwin'] .sidebar {
 }
 
 .codiff-header-toggle,
+.codiff-source-description-collapse-button,
 .codiff-markdown-button,
 .codiff-open-button,
 .codiff-viewed-button,
@@ -2507,6 +2764,12 @@ html[data-codiff-platform='darwin'] .sidebar {
   color: var(--text);
 }
 
+.codiff-source-description-collapse-button {
+  height: 30px;
+  padding: 0;
+  width: 30px;
+}
+
 .codiff-chevron-box {
   align-items: center;
   border-radius: 15px;
@@ -2518,6 +2781,7 @@ html[data-codiff-platform='darwin'] .sidebar {
 }
 
 .codiff-header-toggle:hover:not(:has(.codiff-copy-path-button:hover)) .codiff-chevron-box,
+.codiff-source-description-collapse-button:hover .codiff-chevron-box,
 .codiff-markdown-button:hover,
 .codiff-open-button:hover:not(:disabled),
 .codiff-viewed-button:hover {
@@ -2695,14 +2959,15 @@ html[data-codiff-platform='darwin'] .sidebar {
 
 .codiff-viewed-checkbox {
   align-items: center;
-  border: 1px solid rgb(127 127 127 / 0.42);
-  border-radius: 5px;
+  border: 1.5px solid rgb(127 127 127 / 0.42);
+  border-radius: 8px;
   corner-shape: squircle;
   display: inline-flex;
-  height: 14px;
+  flex: none;
+  height: 16px;
   justify-content: center;
   position: relative;
-  width: 14px;
+  width: 16px;
 }
 
 .codiff-viewed-button.active .codiff-viewed-checkbox {
@@ -2971,7 +3236,7 @@ diffs-container .review-comment-thread {
   --mdx-editor-bg: transparent;
   --mdx-editor-border: transparent;
   --mdx-editor-code-bg: var(--inline-code-bg);
-  --mdx-editor-font: var(--font-sans);
+  --mdx-editor-font: var(--codiff-font-sans);
   --mdx-editor-font-size: 13px;
   --mdx-editor-hover: var(--hover-wash);
   --mdx-editor-line-height: 1.45;
@@ -2981,6 +3246,11 @@ diffs-container .review-comment-thread {
   --mdx-editor-text: var(--text);
   display: block;
   min-height: 76px;
+}
+
+.source-description-markdown-editor.review-comment-markdown-editor {
+  --mdx-editor-font-size: 14px;
+  --mdx-editor-line-height: 1.55;
 }
 
 .review-comment-markdown-editor .mdx-editor-content {

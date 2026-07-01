@@ -17,6 +17,8 @@ export type {
   PullRequestGeneralComment,
   PullRequestGeneralCommentThread,
   PullRequestExistingReviewComment,
+  PullRequestMergeOptions,
+  PullRequestMergeState,
   PullRequestReviewComment,
   PullRequestReviewEvent,
   RepositoryState,

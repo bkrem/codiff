@@ -4,10 +4,11 @@
 
 import { act } from 'react';
 import { expect, test, vi } from 'vite-plus/test';
+import { PullRequestMergeControls } from '../app/components/Panels.tsx';
 import { MergeRequestReviewApp } from '../SharedWalkthroughApp.tsx';
 import type { NarrativeWalkthrough, RepositoryState } from '../types.ts';
 import { createChangedFile } from './helpers/fixtures.ts';
-import { renderReact, waitFor } from './helpers/react.tsx';
+import { renderReact, setInputValue, waitFor } from './helpers/react.tsx';
 
 globalThis.ResizeObserver ??= class ResizeObserver {
   disconnect() {}
@@ -160,6 +161,82 @@ test('merge request reviews expose navigation, actions, and lazy walkthrough gen
   }
 });
 
+test('merge request source descriptions use comment editing controls when editable', async () => {
+  const onUpdateDescription = vi.fn(async () => {});
+  const onUpdateTitle = vi.fn(async () => {});
+  const view = await renderReact(
+    <MergeRequestReviewApp
+      externalUrl={state.source.url}
+      onGenerateWalkthrough={vi.fn()}
+      onHome={vi.fn()}
+      onSubmitComment={vi.fn()}
+      onSubmitGeneralComment={vi.fn()}
+      onSubmitReview={vi.fn(async () => {})}
+      onUpdateComment={vi.fn()}
+      onUpdateDescription={onUpdateDescription}
+      onUpdateGeneralComment={vi.fn()}
+      onUpdateTitle={onUpdateTitle}
+      state={{
+        ...state,
+        source: {
+          ...state.source,
+          canEditDescription: true,
+          canEditTitle: true,
+        },
+      }}
+      title="Review in Codiff"
+      walkthrough={null}
+      walkthroughStatus="idle"
+    />,
+  );
+
+  try {
+    await waitFor(() => {
+      expect(
+        view.container.querySelector<HTMLTextAreaElement>('[aria-label="Edit title"]'),
+      ).not.toBeNull();
+      const edit = view.container.querySelector<HTMLButtonElement>(
+        '.source-description-author-header .review-comment-action',
+      );
+      expect(edit?.textContent).toBe('Edit');
+    });
+    const title = view.container.querySelector<HTMLTextAreaElement>('[aria-label="Edit title"]');
+    expect(title).not.toBeNull();
+    await setInputValue(title!, 'Updated review title');
+    await act(async () => {
+      title!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 850));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onUpdateTitle).toHaveBeenCalledWith('Updated review title');
+    const edit = view.container.querySelector<HTMLButtonElement>(
+      '.source-description-author-header .review-comment-action',
+    );
+    await act(async () => edit?.click());
+    await waitFor(() => {
+      expect(
+        view.container.querySelector(
+          '.source-description-author-header .general-comment-edit-actions',
+        ),
+      ).not.toBeNull();
+      expect(view.container.querySelector('[aria-label="Edit source description"]')).not.toBeNull();
+    });
+    expect(
+      [
+        ...view.container.querySelectorAll<HTMLButtonElement>(
+          '.source-description-author-header .review-comment-action',
+        ),
+      ].map((button) => button.textContent),
+    ).toEqual(['Cancel', 'Save']);
+  } finally {
+    await view.cleanup();
+  }
+});
+
 test('merge request reviews render a Resolve action for resolvable inline discussions', async () => {
   const onResolveDiscussion = vi.fn(async () => {});
   const view = await renderReact(
@@ -286,6 +363,411 @@ test('merge request reviews expose close action when provider allows it', async 
     expect(close?.classList.contains('codiff-open-button')).toBe(true);
     await act(async () => close?.click());
     expect(onClosePullRequest).toHaveBeenCalledOnce();
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge request reviews render merge controls below the description', async () => {
+  const onMergePullRequest = vi.fn(async () => {});
+  const view = await renderReact(
+    <MergeRequestReviewApp
+      externalUrl={state.source.url}
+      gitIdentity={{ email: 'ada@example.com', name: 'Ada Lovelace' }}
+      onGenerateWalkthrough={vi.fn()}
+      onHome={vi.fn()}
+      onMergePullRequest={onMergePullRequest}
+      onSubmitComment={vi.fn()}
+      onSubmitGeneralComment={vi.fn()}
+      onSubmitReview={vi.fn(async () => {})}
+      onUpdateComment={vi.fn()}
+      onUpdateGeneralComment={vi.fn()}
+      state={{
+        ...state,
+        source: {
+          ...state.source,
+          mergeState: {
+            autoMergeEnabled: false,
+            canCancelAutoMerge: false,
+            canMerge: true,
+            canSetAutoMerge: false,
+            checks: [
+              {
+                label: 'Pipeline run passed.',
+                status: 'success',
+              },
+              {
+                label: 'All threads are resolved.',
+                status: 'success',
+              },
+            ],
+            forceRemoveSourceBranch: false,
+            options: {
+              removeSourceBranch: true,
+              squash: false,
+            },
+            sha: 'head-sha',
+            status: 'ready',
+            statusLabel: 'Ready to merge',
+          },
+        },
+      }}
+      title="Review in Codiff"
+      walkthrough={null}
+      walkthroughStatus="idle"
+    />,
+  );
+
+  try {
+    const footer = view.container.querySelector('.codiff-source-description-footer');
+    expect(footer?.textContent).toContain('Ready to merge');
+    expect(footer?.textContent).toContain('Pipeline run passed.');
+    expect(footer?.textContent).toContain('All threads are resolved.');
+    expect(
+      footer?.compareDocumentPosition(
+        view.container.querySelector('.source-description-markdown') as Element,
+      ),
+    ).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+
+    const squash = Array.from(footer?.querySelectorAll<HTMLInputElement>('input') ?? []).find(
+      (input) => input.closest('label')?.textContent?.includes('Squash commits'),
+    );
+    await act(async () => squash?.click());
+    const merge = Array.from(footer?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
+      (button) => button.textContent === 'Merge',
+    );
+    await act(async () => merge?.click());
+
+    expect(onMergePullRequest).toHaveBeenCalledWith({
+      autoMerge: false,
+      removeSourceBranch: true,
+      squash: true,
+    });
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge request reviews show terminal merge status in the source description header', async () => {
+  const view = await renderReact(
+    <MergeRequestReviewApp
+      externalUrl={state.source.url}
+      onCancelAutoMerge={vi.fn()}
+      onGenerateWalkthrough={vi.fn()}
+      onHome={vi.fn()}
+      onMergePullRequest={vi.fn(async () => {})}
+      onSubmitComment={vi.fn()}
+      onSubmitGeneralComment={vi.fn()}
+      onSubmitReview={vi.fn(async () => {})}
+      onUpdateComment={vi.fn()}
+      onUpdateGeneralComment={vi.fn()}
+      state={{
+        ...state,
+        source: {
+          ...state.source,
+          mergeState: {
+            autoMergeEnabled: false,
+            canCancelAutoMerge: false,
+            canMerge: false,
+            canSetAutoMerge: false,
+            checks: [
+              {
+                label: 'Pipeline run passed.',
+                status: 'success',
+              },
+              {
+                label: 'All threads are resolved.',
+                status: 'success',
+              },
+            ],
+            forceRemoveSourceBranch: false,
+            options: {
+              removeSourceBranch: true,
+              squash: true,
+            },
+            reason: 'This merge request has already been merged.',
+            sha: 'head-sha',
+            status: 'merged',
+            statusLabel: 'Merged',
+          },
+          reviewStatus: {
+            approve: { disabled: true },
+            close: { disabled: true },
+            requestChanges: { disabled: true },
+          },
+        },
+      }}
+      title="Review in Codiff"
+      walkthrough={null}
+      walkthroughStatus="idle"
+    />,
+  );
+
+  try {
+    const header = view.container.querySelector('.codiff-source-description-header');
+    const badge = header?.querySelector<HTMLElement>(
+      '.pull-request-merge-status-badge[data-status="merged"]',
+    );
+    expect(badge?.textContent).toBe('Merged');
+    expect(badge?.title).toBe('This merge request has already been merged.');
+    expect(view.container.querySelector('.codiff-source-description-footer')).toBeNull();
+    expect(view.container.querySelector('.pull-request-merge-panel')).toBeNull();
+    expect(view.container.textContent).not.toContain('Squash commits');
+    expect(view.container.textContent).not.toContain('Delete source branch');
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge request reviews update source description merge controls when merge state changes', async () => {
+  const mergeState = {
+    autoMergeEnabled: false,
+    canCancelAutoMerge: false,
+    canMerge: false,
+    canSetAutoMerge: true,
+    checks: [
+      {
+        label: 'Pipeline is running.',
+        status: 'pending',
+      },
+    ],
+    forceRemoveSourceBranch: false,
+    options: {
+      removeSourceBranch: true,
+      squash: false,
+    },
+    sha: 'head-sha',
+    status: 'checking',
+    statusLabel: 'Merge blocked: 1 check pending',
+  } satisfies NonNullable<
+    Extract<RepositoryState['source'], { type: 'pull-request' }>['mergeState']
+  >;
+  const render = (nextState: RepositoryState) => (
+    <MergeRequestReviewApp
+      externalUrl={state.source.url}
+      gitIdentity={{ email: 'ada@example.com', name: 'Ada Lovelace' }}
+      onCancelAutoMerge={vi.fn()}
+      onGenerateWalkthrough={vi.fn()}
+      onHome={vi.fn()}
+      onMergePullRequest={vi.fn()}
+      onSubmitComment={vi.fn()}
+      onSubmitGeneralComment={vi.fn()}
+      onSubmitReview={vi.fn(async () => {})}
+      onUpdateComment={vi.fn()}
+      onUpdateGeneralComment={vi.fn()}
+      state={nextState}
+      title="Review in Codiff"
+      walkthrough={null}
+      walkthroughStatus="idle"
+    />
+  );
+  const initialState = {
+    ...state,
+    source: {
+      ...state.source,
+      mergeState,
+    },
+  } satisfies RepositoryState;
+  const view = await renderReact(render(initialState));
+
+  try {
+    expect(
+      view.container.querySelector('.codiff-source-description-footer')?.textContent,
+    ).toContain('Auto-Merge');
+
+    await view.rerender(
+      render({
+        ...initialState,
+        source: {
+          ...initialState.source,
+          mergeState: {
+            ...mergeState,
+            autoMergeEnabled: true,
+            canCancelAutoMerge: true,
+            canSetAutoMerge: false,
+            status: 'waiting',
+          },
+        },
+      }),
+    );
+
+    const footer = view.container.querySelector('.codiff-source-description-footer');
+    expect(footer?.textContent).toContain('Cancel Auto-Merge');
+    expect(footer?.textContent).not.toContain('Auto-MergeSquash commits');
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge controls render auto-merge action for waitable merge states', async () => {
+  const onMergePullRequest = vi.fn(async () => {});
+  const view = await renderReact(
+    <PullRequestMergeControls
+      disabled={false}
+      mergeState={{
+        autoMergeEnabled: false,
+        canCancelAutoMerge: false,
+        canMerge: false,
+        canSetAutoMerge: true,
+        checks: [
+          {
+            label: 'Waiting for approvals.',
+            status: 'failed',
+          },
+          {
+            label: 'Policy rules must be satisfied.',
+            status: 'failed',
+          },
+          {
+            label: 'Pipeline run failed.',
+            status: 'failed',
+          },
+          {
+            label: 'All threads are resolved.',
+            status: 'success',
+          },
+        ],
+        detailedStatus: 'not_approved',
+        forceRemoveSourceBranch: false,
+        options: {
+          removeSourceBranch: true,
+          squash: false,
+        },
+        reason: 'Approvals required',
+        sha: 'head-sha',
+        status: 'checking',
+        statusLabel: 'Merge blocked: 3 checks failed',
+      }}
+      onMergePullRequest={onMergePullRequest}
+    />,
+  );
+
+  try {
+    const autoMerge = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Auto-Merge',
+    );
+    expect(autoMerge).not.toBeUndefined();
+    expect(view.container.textContent).toContain('Waiting for approvals.');
+    expect(view.container.textContent).toContain('Policy rules must be satisfied.');
+    expect(view.container.textContent).toContain('Pipeline run failed.');
+    await act(async () => autoMerge?.click());
+
+    expect(onMergePullRequest).toHaveBeenCalledWith({
+      autoMerge: true,
+      removeSourceBranch: true,
+      squash: false,
+    });
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge controls render only cancel action when auto-merge is enabled', async () => {
+  const view = await renderReact(
+    <PullRequestMergeControls
+      disabled={false}
+      mergeState={{
+        autoMergeEnabled: true,
+        canCancelAutoMerge: true,
+        canMerge: false,
+        canSetAutoMerge: false,
+        checks: [
+          {
+            label: 'Pipeline is running.',
+            status: 'pending',
+          },
+        ],
+        forceRemoveSourceBranch: false,
+        options: {
+          removeSourceBranch: true,
+          squash: false,
+        },
+        sha: 'head-sha',
+        status: 'waiting',
+        statusLabel: 'Merge blocked: 1 check pending',
+      }}
+      onCancelAutoMerge={vi.fn(async () => {})}
+      onMergePullRequest={vi.fn(async () => {})}
+    />,
+  );
+
+  try {
+    const buttons = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).map(
+      (button) => button.textContent,
+    );
+    expect(buttons).toEqual(['Cancel Auto-Merge']);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge controls render pending thinking label for merge actions', async () => {
+  const view = await renderReact(
+    <PullRequestMergeControls
+      disabled
+      isPending
+      mergeState={{
+        autoMergeEnabled: false,
+        canCancelAutoMerge: false,
+        canMerge: false,
+        canSetAutoMerge: true,
+        checks: [
+          {
+            label: 'Pipeline is running.',
+            status: 'pending',
+          },
+        ],
+        forceRemoveSourceBranch: false,
+        options: {
+          removeSourceBranch: true,
+          squash: false,
+        },
+        sha: 'head-sha',
+        status: 'checking',
+        statusLabel: 'Merge blocked: 1 check pending',
+      }}
+      onMergePullRequest={vi.fn(async () => {})}
+    />,
+  );
+
+  try {
+    expect(view.container.querySelector('button em')?.textContent).toBe('Thinking…');
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge controls render pending thinking label for cancel auto-merge', async () => {
+  const view = await renderReact(
+    <PullRequestMergeControls
+      disabled
+      isPending
+      mergeState={{
+        autoMergeEnabled: true,
+        canCancelAutoMerge: true,
+        canMerge: false,
+        canSetAutoMerge: false,
+        checks: [
+          {
+            label: 'Pipeline is running.',
+            status: 'pending',
+          },
+        ],
+        forceRemoveSourceBranch: false,
+        options: {
+          removeSourceBranch: true,
+          squash: false,
+        },
+        sha: 'head-sha',
+        status: 'waiting',
+        statusLabel: 'Merge blocked: 1 check pending',
+      }}
+      onCancelAutoMerge={vi.fn(async () => {})}
+    />,
+  );
+
+  try {
+    expect(view.container.querySelector('button em')?.textContent).toBe('Thinking…');
   } finally {
     await view.cleanup();
   }

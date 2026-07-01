@@ -19,7 +19,10 @@ import {
 } from 'react';
 import { Gravatar } from './app/components/Gravatar.tsx';
 import {
+  isTerminalPullRequestMergeState,
   isPullRequestReviewActionDisabled,
+  PullRequestMergeControls,
+  PullRequestMergeStatusBadge,
   PullRequestReviewButtons,
 } from './app/components/Panels.tsx';
 import { ReadOnlyMarkdownView } from './app/components/ReadOnlyMarkdownView.tsx';
@@ -74,6 +77,7 @@ import type {
   CodiffPreferences,
   GitIdentity,
   NarrativeWalkthrough,
+  PullRequestMergeOptions,
   PullRequestGeneralComment,
   PullRequestGeneralCommentThread,
   PullRequestExistingReviewComment,
@@ -117,9 +121,13 @@ export type MergeRequestReviewAppProps = {
   externalUrl: string;
   gitIdentity?: GitIdentity | null;
   initialMode?: MergeRequestReviewMode;
+  onCancelAutoMerge?: () => Promise<void> | void;
   onClosePullRequest?: () => Promise<void> | void;
   onGenerateWalkthrough: () => Promise<void> | void;
   onHome: () => void;
+  onMergePullRequest?: (
+    options: PullRequestMergeOptions & { autoMerge: boolean },
+  ) => Promise<void> | void;
   onModeChange?: (mode: MergeRequestReviewMode) => void;
   onResolveDiscussion?: (discussionId: string, resolved: boolean) => Promise<void>;
   onSubmitComment: (comment: PullRequestReviewComment) => Promise<PullRequestExistingReviewComment>;
@@ -129,7 +137,10 @@ export type MergeRequestReviewAppProps = {
     comments: ReadonlyArray<PullRequestReviewComment>,
   ) => Promise<void>;
   onUpdateComment: (commentId: string, body: string) => Promise<void>;
+  onUpdateDescription?: (body: string) => Promise<void> | void;
   onUpdateGeneralComment: (commentId: string, body: string) => Promise<void>;
+  onUpdateTitle?: (title: string) => Promise<void> | void;
+  onUploadDescriptionAsset?: (file: File) => Promise<string> | string;
   preferences?: Partial<
     Pick<
       CodiffPreferences,
@@ -816,9 +827,13 @@ type ReviewSurfaceProps = {
   gitIdentity?: GitIdentity | null;
   initialMode?: MergeRequestReviewMode;
   interactive?: {
+    onCancelAutoMerge?: () => Promise<void> | void;
     onClosePullRequest?: () => Promise<void> | void;
     onGenerateWalkthrough: () => Promise<void> | void;
     onHome: () => void;
+    onMergePullRequest?: (
+      options: PullRequestMergeOptions & { autoMerge: boolean },
+    ) => Promise<void> | void;
     onResolveDiscussion?: (discussionId: string, resolved: boolean) => Promise<void>;
     onSubmitComment: (
       comment: PullRequestReviewComment,
@@ -829,7 +844,10 @@ type ReviewSurfaceProps = {
       comments: ReadonlyArray<PullRequestReviewComment>,
     ) => Promise<void>;
     onUpdateComment: (commentId: string, body: string) => Promise<void>;
+    onUpdateDescription?: (body: string) => Promise<void> | void;
     onUpdateGeneralComment: (commentId: string, body: string) => Promise<void>;
+    onUpdateTitle?: (title: string) => Promise<void> | void;
+    onUploadDescriptionAsset?: (file: File) => Promise<string> | string;
     walkthroughError?: string | null;
     walkthroughStatus: MergeRequestWalkthroughStatus;
   };
@@ -918,6 +936,7 @@ function ReviewSurface({
   const [pullRequestReviewSubmitting, setPullRequestReviewSubmitting] =
     useState<PullRequestReviewEvent | null>(null);
   const [pullRequestCloseSubmitting, setPullRequestCloseSubmitting] = useState(false);
+  const [pullRequestMergeSubmitting, setPullRequestMergeSubmitting] = useState(false);
   const [walkthroughRequestPending, setWalkthroughRequestPending] = useState(false);
   const walkthroughRequestPendingRef = useRef(false);
   const [walkthroughRequestId, setWalkthroughRequestId] = useState(0);
@@ -1187,6 +1206,33 @@ function ReviewSurface({
       })
       .finally(() => setPullRequestCloseSubmitting(false));
   }, [interactive, pullRequestCloseSubmitting, snapshot.repository.source]);
+  const mergePullRequest = useCallback(
+    (options: PullRequestMergeOptions & { autoMerge: boolean }) => {
+      if (!interactive?.onMergePullRequest || pullRequestMergeSubmitting) {
+        return;
+      }
+
+      setPullRequestMergeSubmitting(true);
+      void Promise.resolve(interactive.onMergePullRequest(options))
+        .catch((error: unknown) => {
+          window.alert(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => setPullRequestMergeSubmitting(false));
+    },
+    [interactive, pullRequestMergeSubmitting],
+  );
+  const cancelAutoMerge = useCallback(() => {
+    if (!interactive?.onCancelAutoMerge || pullRequestMergeSubmitting) {
+      return;
+    }
+
+    setPullRequestMergeSubmitting(true);
+    void Promise.resolve(interactive.onCancelAutoMerge())
+      .catch((error: unknown) => {
+        window.alert(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setPullRequestMergeSubmitting(false));
+  }, [interactive, pullRequestMergeSubmitting]);
   useEffect(() => {
     interactiveRef.current = interactive;
   }, [interactive]);
@@ -1449,6 +1495,9 @@ function ReviewSurface({
     onToggleCollapsed: toggleCollapsed,
     onToggleViewed: toggleViewed,
     onUpdateComment: updateComment,
+    onUpdateSourceDescription: interactive?.onUpdateDescription,
+    onUpdateSourceTitle: interactive?.onUpdateTitle,
+    onUploadSourceDescriptionAsset: interactive?.onUploadDescriptionAsset,
     searchQuery: '',
     showWhitespace: snapshot.preferences.showWhitespace,
     source: snapshot.repository.source,
@@ -1456,6 +1505,14 @@ function ReviewSurface({
     wordWrap: snapshot.preferences.wordWrap,
   };
   const source = snapshot.repository.source;
+  const sourceMergeState = source.type === 'pull-request' ? source.mergeState : undefined;
+  const isTerminalMergeState = sourceMergeState
+    ? isTerminalPullRequestMergeState(sourceMergeState)
+    : false;
+  const sourceMergeStatusBadge =
+    sourceMergeState && isTerminalMergeState ? (
+      <PullRequestMergeStatusBadge mergeState={sourceMergeState} />
+    ) : null;
   const sourceDescriptionActions =
     interactive && source.type === 'pull-request' ? (
       <PullRequestReviewButtons
@@ -1463,11 +1520,56 @@ function ReviewSurface({
         onClosePullRequest={closePullRequest}
         onSubmitReview={submitReview}
         reviewStatus={source.reviewStatus}
+      >
+        {sourceMergeStatusBadge}
+      </PullRequestReviewButtons>
+    ) : sourceMergeStatusBadge ? (
+      <div aria-label="Pull request status" className="source-description-review-actions">
+        {sourceMergeStatusBadge}
+      </div>
+    ) : undefined;
+  const sourceDescriptionFooter =
+    interactive && sourceMergeState && !isTerminalMergeState ? (
+      <PullRequestMergeControls
+        disabled={pullRequestMergeSubmitting}
+        isPending={pullRequestMergeSubmitting}
+        mergeState={sourceMergeState}
+        onCancelAutoMerge={cancelAutoMerge}
+        onMergePullRequest={mergePullRequest}
       />
     ) : undefined;
+  const sourceDescriptionFooterKey =
+    interactive && sourceMergeState && !isTerminalMergeState
+      ? [
+          'merge',
+          pullRequestMergeSubmitting ? 'submitting' : 'idle',
+          sourceMergeState.sha,
+          String(sourceMergeState.autoMergeEnabled),
+          String(sourceMergeState.canCancelAutoMerge),
+          String(sourceMergeState.canMerge),
+          String(sourceMergeState.canSetAutoMerge),
+          sourceMergeState.status,
+          sourceMergeState.statusLabel,
+          String(sourceMergeState.options.removeSourceBranch),
+          String(sourceMergeState.options.squash),
+          ...sourceMergeState.checks.map(
+            (check) => `${check.status}:${check.label}:${check.detail ?? ''}:${check.url ?? ''}`,
+          ),
+        ].join('|')
+      : sourceDescriptionFooter
+        ? 'custom'
+        : '';
   const sourceDescription =
     source.type === 'pull-request' ? (
-      <PullRequestSourceDescription actions={sourceDescriptionActions} source={source} />
+      <PullRequestSourceDescription
+        actions={sourceDescriptionActions}
+        footer={sourceDescriptionFooter}
+        keymap={keymap}
+        onUpdateDescription={interactive?.onUpdateDescription}
+        onUpdateTitle={interactive?.onUpdateTitle}
+        onUploadDescriptionAsset={interactive?.onUploadDescriptionAsset}
+        source={source}
+      />
     ) : null;
 
   const renderWalkthroughDiffBlocks = (
@@ -1489,6 +1591,8 @@ function ReviewSurface({
           selectedPath={null}
           showSourceDescription
           sourceDescriptionActions={sourceDescriptionActions}
+          sourceDescriptionFooter={sourceDescriptionFooter}
+          sourceDescriptionFooterKey={sourceDescriptionFooterKey}
           walkthroughNotes={emptyWalkthroughNotes}
         />
       </div>
@@ -1688,6 +1792,8 @@ function ReviewSurface({
               scrollTarget={treeScrollTarget}
               selectedPath={visibleSelectedPath}
               sourceDescriptionActions={sourceDescriptionActions}
+              sourceDescriptionFooter={sourceDescriptionFooter}
+              sourceDescriptionFooterKey={sourceDescriptionFooterKey}
               walkthroughNotes={emptyWalkthroughNotes}
             />
           )
@@ -1731,16 +1837,21 @@ export function MergeRequestReviewApp({
   externalUrl,
   gitIdentity,
   initialMode,
+  onCancelAutoMerge,
   onClosePullRequest,
   onGenerateWalkthrough,
   onHome,
+  onMergePullRequest,
   onModeChange,
   onResolveDiscussion,
   onSubmitComment,
   onSubmitGeneralComment,
   onSubmitReview,
   onUpdateComment,
+  onUpdateDescription,
   onUpdateGeneralComment,
+  onUpdateTitle,
+  onUploadDescriptionAsset,
   preferences,
   state,
   title,
@@ -1800,15 +1911,20 @@ export function MergeRequestReviewApp({
       gitIdentity={gitIdentity}
       initialMode={initialMode}
       interactive={{
+        onCancelAutoMerge,
         onClosePullRequest,
         onGenerateWalkthrough,
         onHome,
+        onMergePullRequest,
         onResolveDiscussion,
         onSubmitComment,
         onSubmitGeneralComment,
         onSubmitReview,
         onUpdateComment,
+        onUpdateDescription,
         onUpdateGeneralComment,
+        onUpdateTitle,
+        onUploadDescriptionAsset,
         walkthroughError,
         walkthroughStatus,
       }}

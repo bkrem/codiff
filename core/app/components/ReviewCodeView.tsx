@@ -29,6 +29,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent as ReactChangeEvent,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -451,39 +452,155 @@ const getSourceAuthorDisplayName = (author: ReviewAuthor) => author.name || `@${
 const htmlCommentPattern = /<!--[\s\S]*?-->/g;
 const stripHtmlComments = (value: string) => value.replaceAll(htmlCommentPattern, '');
 type PullRequestSource = Extract<ReviewSource, { type: 'pull-request' }>;
+const sourceTitleUpdateDebounceMs = 800;
+
+function SourceDescriptionTitle({
+  canEdit,
+  label,
+  onUpdateTitle,
+  title,
+}: {
+  canEdit: boolean;
+  label: string;
+  onUpdateTitle?: (title: string) => Promise<void> | void;
+  title: string;
+}) {
+  const [draft, setDraft] = useState(title);
+  const [error, setError] = useState<string | null>(null);
+  const submittedTitleRef = useRef(title.trim());
+  const titleSavePromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const trimmedDraft = draft.trim();
+
+  useEffect(() => {
+    if (!canEdit || !onUpdateTitle || !trimmedDraft || trimmedDraft === submittedTitleRef.current) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const titleToSave = trimmedDraft;
+      const save = titleSavePromiseRef.current.then(() => onUpdateTitle(titleToSave));
+      titleSavePromiseRef.current = save.catch(() => {});
+      void save
+        .then(() => {
+          submittedTitleRef.current = titleToSave;
+        })
+        .catch((updateError: unknown) => {
+          setError(updateError instanceof Error ? updateError.message : String(updateError));
+        });
+    }, sourceTitleUpdateDebounceMs);
+    return () => window.clearTimeout(timeout);
+  }, [canEdit, onUpdateTitle, trimmedDraft]);
+
+  if (!canEdit || !onUpdateTitle) {
+    return (
+      <span className={`codiff-file-path${title ? ' source-description-title' : ''}`}>
+        {title || label}
+      </span>
+    );
+  }
+
+  return (
+    <textarea
+      aria-label="Edit title"
+      className={`codiff-file-path source-description-title source-description-title-editor${
+        error ? ' has-error' : ''
+      }`}
+      onBlur={() => {
+        if (!trimmedDraft) {
+          setDraft(title);
+          setError(null);
+        }
+      }}
+      onChange={(event: ReactChangeEvent<HTMLTextAreaElement>) => {
+        setDraft(event.target.value);
+        setError(null);
+      }}
+      onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setDraft(title);
+          setError(null);
+          event.currentTarget.blur();
+          return;
+        }
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+      rows={1}
+      spellCheck
+      title={error ?? undefined}
+      value={draft}
+      wrap="off"
+    />
+  );
+}
 
 // The PR/MR description is a file-style card matching commit details: the title lives in the
 // card header and the description is the collapsible body.
 function SourceDescriptionHeader({
   actions,
   canCollapse,
+  canEditTitle,
   isCollapsed,
   label,
   onToggleCollapsed,
+  onUpdateTitle,
   title,
 }: {
   actions?: ReactNode;
   canCollapse: boolean;
+  canEditTitle?: boolean;
   isCollapsed: boolean;
   label: string;
   onToggleCollapsed: () => void;
+  onUpdateTitle?: (title: string) => Promise<void> | void;
   title: string;
 }) {
+  const editableTitle = canEditTitle === true && onUpdateTitle != null && title.length > 0;
   const heading = (
     <span className="codiff-file-heading">
       <span className="codiff-file-path-row">
-        <span className={`codiff-file-path${title ? ' source-description-title' : ''}`}>
-          {title || label}
-        </span>
+        <SourceDescriptionTitle
+          canEdit={editableTitle}
+          key={title}
+          label={label}
+          onUpdateTitle={onUpdateTitle}
+          title={title}
+        />
       </span>
     </span>
   );
 
   return (
     <div
-      className={`codiff-file-header codiff-source-description-header${isCollapsed ? ' collapsed' : ''}`}
+      className={`codiff-file-header codiff-source-description-header${
+        isCollapsed ? ' collapsed' : ''
+      }${editableTitle ? ' editable-title' : ''}`}
     >
-      {canCollapse ? (
+      {canCollapse && editableTitle ? (
+        <>
+          <button
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? 'Expand description' : 'Collapse description'}
+            className="codiff-source-description-collapse-button"
+            onClick={onToggleCollapsed}
+            title={isCollapsed ? 'Expand' : 'Collapse'}
+            type="button"
+          >
+            <span className="codiff-chevron-box">
+              <CaretDown
+                aria-hidden
+                className={isCollapsed ? 'codiff-chevron collapsed' : 'codiff-chevron'}
+                size={16}
+                weight="bold"
+              />
+            </span>
+          </button>
+          <div className="codiff-source-description-title-cell">{heading}</div>
+        </>
+      ) : canCollapse ? (
         <button
           aria-expanded={!isCollapsed}
           aria-label={isCollapsed ? 'Expand description' : 'Collapse description'}
@@ -502,6 +619,8 @@ function SourceDescriptionHeader({
           </span>
           {heading}
         </button>
+      ) : editableTitle ? (
+        <div className="codiff-source-description-title-cell">{heading}</div>
       ) : (
         <div className="codiff-header-toggle codiff-header-toggle-static">{heading}</div>
       )}
@@ -512,21 +631,137 @@ function SourceDescriptionHeader({
 
 function SourceDescriptionBody({
   author,
+  canEdit,
   description,
+  keymap,
   layoutKey,
   onLayoutReady,
+  onUpdateDescription,
+  onUploadDescriptionAsset,
 }: {
   author?: ReviewAuthor;
+  canEdit?: boolean;
   description: string;
+  keymap?: CodiffKeymap;
   layoutKey: string;
   onLayoutReady: (layoutKey: string) => void;
+  onUpdateDescription?: (body: string) => Promise<void> | void;
+  onUploadDescriptionAsset?: (file: File) => Promise<string> | string;
 }) {
   useLayoutEffect(() => {
     onLayoutReady(layoutKey);
   }, [layoutKey, onLayoutReady]);
+  const canEditDescription = canEdit === true && onUpdateDescription != null;
+  const [editDraft, setEditDraft] = useState(description);
+  const [editEditorReady, setEditEditorReady] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [savedDescription, setSavedDescription] = useState<{
+    body: string;
+    previousDescription: string;
+  } | null>(null);
+  const displayedDescription =
+    savedDescription != null && description === savedDescription.previousDescription
+      ? savedDescription.body
+      : description;
   const sanitizedDescription = useMemo(
-    () => sanitizeMarkdownImages(stripHtmlComments(description)),
-    [description],
+    () => sanitizeMarkdownImages(stripHtmlComments(displayedDescription)),
+    [displayedDescription],
+  );
+  const descriptionEditorPlugins = useMemo(
+    () =>
+      onUploadDescriptionAsset
+        ? [
+            imagePlugin({
+              imageUploadHandler: (file) => Promise.resolve(onUploadDescriptionAsset(file)),
+            }),
+          ]
+        : undefined,
+    [onUploadDescriptionAsset],
+  );
+  const editorRef = useRef<MarkdownEditorHandle | null>(null);
+  const canSaveEdit =
+    editing && !editSubmitting && editDraft.trim() !== displayedDescription.trim();
+
+  const setEditorRef = useCallback(
+    (editor: MarkdownEditorHandle | null) => {
+      editorRef.current = editor;
+      if (editor && editing) {
+        requestAnimationFrame(() => {
+          setEditEditorReady(true);
+          editor.focus({ defaultSelection: 'rootEnd', preventScroll: true });
+        });
+      }
+    },
+    [editing],
+  );
+
+  useEffect(() => {
+    if (!editing) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      editorRef.current?.focus({ defaultSelection: 'rootEnd', preventScroll: true });
+    });
+  }, [editing]);
+
+  const startEdit = useCallback(() => {
+    if (!canEditDescription || editSubmitting) {
+      return;
+    }
+
+    setEditDraft(displayedDescription);
+    setEditEditorReady(false);
+    setEditError(null);
+    setEditing(true);
+    preloadMarkdownEditor();
+  }, [canEditDescription, displayedDescription, editSubmitting]);
+
+  const cancelEdit = useCallback(() => {
+    if (editSubmitting) {
+      return;
+    }
+
+    setEditDraft(displayedDescription);
+    setEditEditorReady(false);
+    setEditError(null);
+    setEditing(false);
+  }, [displayedDescription, editSubmitting]);
+
+  const saveEdit = useCallback(() => {
+    const body = editDraft.trim();
+    if (!canEditDescription || editSubmitting || body === displayedDescription.trim()) {
+      return;
+    }
+
+    setEditError(null);
+    setEditSubmitting(true);
+    void Promise.resolve(onUpdateDescription(body))
+      .then(() => {
+        setSavedDescription({ body, previousDescription: displayedDescription });
+        setEditDraft(body);
+        setEditEditorReady(false);
+        setEditing(false);
+      })
+      .catch((error: unknown) => {
+        setEditError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setEditSubmitting(false));
+  }, [canEditDescription, displayedDescription, editDraft, editSubmitting, onUpdateDescription]);
+
+  const handleEditKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!keymap || !matchesShortcut(event, keymap, 'submitComment') || !canSaveEdit) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      saveEdit();
+    },
+    [canSaveEdit, keymap, saveEdit],
   );
 
   return (
@@ -543,21 +778,112 @@ function SourceDescriptionBody({
         />
       ) : null}
       <div className="review-comment-body source-description-body">
-        {author ? (
-          <div className="review-comment-header read-only source-description-author-header">
-            <strong title={`@${author.login}`}>{getSourceAuthorDisplayName(author)}</strong>
+        {author || canEditDescription || editing ? (
+          <div
+            className={`review-comment-header read-only source-description-author-header${
+              canEditDescription || editing ? ' with-comment-action' : ''
+            }`}
+          >
+            <strong title={author ? `@${author.login}` : undefined}>
+              {author ? getSourceAuthorDisplayName(author) : 'Description'}
+            </strong>
+            {editing ? (
+              <span className="general-comment-edit-actions">
+                <button
+                  className="review-comment-action"
+                  disabled={editSubmitting}
+                  onClick={cancelEdit}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="review-comment-action"
+                  disabled={!canSaveEdit}
+                  onClick={saveEdit}
+                  type="button"
+                >
+                  {editSubmitting ? 'Saving' : 'Save'}
+                </button>
+              </span>
+            ) : canEditDescription ? (
+              <button
+                className="review-comment-action"
+                onClick={startEdit}
+                onFocus={preloadMarkdownEditor}
+                onPointerEnter={preloadMarkdownEditor}
+                type="button"
+              >
+                Edit
+              </button>
+            ) : null}
           </div>
         ) : null}
-        <div className="codiff-markdown-preview source-description-markdown">
-          <ReadOnlyMarkdown
-            ariaLabel="Preview source description"
-            className="codiff-markdown-preview-editor source-description-markdown-editor"
-            density="compact"
-            onHeightChange={() => onLayoutReady(layoutKey)}
-            value={sanitizedDescription}
-            variant="embedded"
-          />
-        </div>
+        {editing ? (
+          <>
+            <div>
+              <Suspense
+                fallback={
+                  <ReadOnlyMarkdown
+                    ariaLabel="Preview source description"
+                    className="codiff-markdown-preview-editor source-description-markdown-editor source-description-edit-preview"
+                    density="compact"
+                    onHeightChange={() => onLayoutReady(layoutKey)}
+                    value={sanitizedDescription}
+                    variant="embedded"
+                  />
+                }
+              >
+                <div
+                  className={`review-comment-edit-shell source-description-edit-shell${
+                    editEditorReady ? ' ready' : ' loading'
+                  }`}
+                >
+                  {!editEditorReady ? (
+                    <ReadOnlyMarkdown
+                      ariaLabel="Preview source description"
+                      className="codiff-markdown-preview-editor source-description-markdown-editor source-description-edit-preview"
+                      density="compact"
+                      onHeightChange={() => onLayoutReady(layoutKey)}
+                      value={sanitizedDescription}
+                      variant="embedded"
+                    />
+                  ) : null}
+                  <div className="review-comment-edit-editor">
+                    <MarkdownEditor
+                      additionalPlugins={descriptionEditorPlugins}
+                      ariaLabel="Edit source description"
+                      className="review-comment-markdown-editor general-comment-markdown-editor source-description-markdown-editor"
+                      colorScheme="inherit"
+                      contentClassName="review-comment-input general-comment-input"
+                      density="compact"
+                      onChange={setEditDraft}
+                      onHeightChange={() => onLayoutReady(layoutKey)}
+                      onKeyDown={handleEditKeyDown}
+                      readOnly={editSubmitting}
+                      ref={setEditorRef}
+                      spellCheck
+                      value={editDraft}
+                      variant="embedded"
+                    />
+                  </div>
+                </div>
+              </Suspense>
+            </div>
+            {editError ? <div className="review-comment-error">{editError}</div> : null}
+          </>
+        ) : (
+          <div className="codiff-markdown-preview source-description-markdown">
+            <ReadOnlyMarkdown
+              ariaLabel="Preview source description"
+              className="codiff-markdown-preview-editor source-description-markdown-editor"
+              density="compact"
+              onHeightChange={() => onLayoutReady(layoutKey)}
+              value={sanitizedDescription}
+              variant="embedded"
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -565,41 +891,61 @@ function SourceDescriptionBody({
 
 export function PullRequestSourceDescription({
   actions,
+  footer,
+  keymap,
+  onUpdateDescription,
+  onUpdateTitle,
+  onUploadDescriptionAsset,
   source,
 }: {
   actions?: ReactNode;
+  footer?: ReactNode;
+  keymap?: CodiffKeymap;
+  onUpdateDescription?: (body: string) => Promise<void> | void;
+  onUpdateTitle?: (title: string) => Promise<void> | void;
+  onUploadDescriptionAsset?: (file: File) => Promise<string> | string;
   source: PullRequestSource;
 }) {
   const sourceDescription = source.description?.trim() ?? '';
   const sourceTitle = source.title?.trim() ?? '';
   const sourceDescriptionHasBody = sourceDescription.length > 0;
+  const canEditDescription = source.canEditDescription === true && onUpdateDescription != null;
+  const canEditTitle =
+    (source.canEditTitle === true || source.canEditDescription === true) && onUpdateTitle != null;
   const [collapsed, setCollapsed] = useState(false);
 
   if (!sourceDescription && !sourceTitle) {
     return null;
   }
 
-  const isCollapsed = !sourceDescriptionHasBody || collapsed;
+  const isCollapsed = (!sourceDescriptionHasBody && !canEditDescription) || collapsed;
   const layoutKey = `source-description-panel:${source.provider ?? ''}:${source.url}:${sourceTitle}:${sourceDescription}:${source.author?.login ?? ''}:${source.author?.avatarUrl ?? ''}:${isCollapsed ? 'collapsed' : 'open'}`;
 
   return (
     <div className="codiff-source-description-panel">
       <SourceDescriptionHeader
         actions={actions}
-        canCollapse={sourceDescriptionHasBody}
+        canCollapse={sourceDescriptionHasBody || canEditDescription}
+        canEditTitle={canEditTitle}
         isCollapsed={isCollapsed}
         label={getPullRequestDescriptionLabel(source)}
         onToggleCollapsed={() => setCollapsed((current) => !current)}
+        onUpdateTitle={onUpdateTitle}
         title={sourceTitle}
       />
       {!isCollapsed ? (
         <div className="codiff-source-description-panel-body">
           <SourceDescriptionBody
             author={source.author}
+            canEdit={canEditDescription}
             description={sourceDescription}
+            keymap={keymap}
             layoutKey={layoutKey}
             onLayoutReady={() => {}}
+            onUpdateDescription={onUpdateDescription}
+            onUploadDescriptionAsset={onUploadDescriptionAsset}
           />
+          {footer ? <div className="codiff-source-description-footer">{footer}</div> : null}
         </div>
       ) : null}
     </div>
@@ -2031,6 +2377,9 @@ export function ReviewCodeView({
   onToggleCollapsed,
   onToggleViewed,
   onUpdateComment,
+  onUpdateSourceDescription,
+  onUpdateSourceTitle,
+  onUploadSourceDescriptionAsset,
   reviewIdentityByPath,
   scrollTarget,
   searchQuery,
@@ -2039,6 +2388,8 @@ export function ReviewCodeView({
   showWhitespace,
   source,
   sourceDescriptionActions,
+  sourceDescriptionFooter,
+  sourceDescriptionFooterKey,
   viewed,
   walkthroughNotes,
   wordWrap,
@@ -2082,6 +2433,9 @@ export function ReviewCodeView({
   onToggleCollapsed: (file: ChangedFile, isCollapsed: boolean, reviewKey: string) => void;
   onToggleViewed: (file: ChangedFile, isViewed: boolean, reviewIdentity: ReviewIdentity) => void;
   onUpdateComment: (commentId: string, body: string) => void;
+  onUpdateSourceDescription?: (body: string) => Promise<void> | void;
+  onUpdateSourceTitle?: (title: string) => Promise<void> | void;
+  onUploadSourceDescriptionAsset?: (file: File) => Promise<string> | string;
   reviewIdentityByPath?: ReadonlyMap<string, ReviewIdentity>;
   scrollTarget: ReviewScrollTarget | null;
   searchQuery: string;
@@ -2090,6 +2444,8 @@ export function ReviewCodeView({
   showWhitespace: boolean;
   source: ReviewSource;
   sourceDescriptionActions?: ReactNode;
+  sourceDescriptionFooter?: ReactNode;
+  sourceDescriptionFooterKey?: string;
   viewed: Record<string, string>;
   walkthroughNotes: ReadonlyMap<string, WalkthroughNote>;
   wordWrap: boolean;
@@ -2140,6 +2496,14 @@ export function ReviewCodeView({
   const shouldShowSourceDescription = showSourceDescription && source.type === 'pull-request';
   const sourceDescription = shouldShowSourceDescription ? (source.description?.trim() ?? '') : '';
   const sourceDescriptionHasBody = sourceDescription.length > 0;
+  const canEditSourceDescription =
+    shouldShowSourceDescription &&
+    source.canEditDescription === true &&
+    onUpdateSourceDescription != null;
+  const canEditSourceTitle =
+    shouldShowSourceDescription &&
+    (source.canEditTitle === true || source.canEditDescription === true) &&
+    onUpdateSourceTitle != null;
   const sourceAuthor = shouldShowSourceDescription ? source.author : undefined;
   const sourceTitle = shouldShowSourceDescription ? (source.title?.trim() ?? '') : '';
   const sourceDescriptionItemId =
@@ -2165,7 +2529,8 @@ export function ReviewCodeView({
     string | null
   >(null);
   const sourceDescriptionCollapsed =
-    !sourceDescriptionHasBody || collapsedSourceDescriptionItemId === sourceDescriptionItemId;
+    (!sourceDescriptionHasBody && !canEditSourceDescription) ||
+    collapsedSourceDescriptionItemId === sourceDescriptionItemId;
   const toggleSourceDescriptionCollapsed = useCallback(() => {
     setCollapsedSourceDescriptionItemId((current) =>
       current === sourceDescriptionItemId ? null : sourceDescriptionItemId,
@@ -2252,26 +2617,40 @@ export function ReviewCodeView({
     const fontLayoutKey = `line-height:${diffLineHeight}`;
 
     if (sourceDescriptionItemId) {
-      const sourceDescriptionLayoutKey = `${sourceDescriptionItemId}:${sourceTitle}:${sourceDescription}:${sourceAuthor?.login ?? ''}:${sourceAuthor?.avatarUrl ?? ''}:${sourceDescriptionCollapsed ? 'collapsed' : 'open'}`;
+      const sourceDescriptionLayoutKey = `${sourceDescriptionItemId}:${sourceTitle}:${sourceDescription}:${sourceAuthor?.login ?? ''}:${sourceAuthor?.avatarUrl ?? ''}:${sourceDescriptionCollapsed ? 'collapsed' : 'open'}:${sourceDescriptionFooterKey ?? ''}`;
       nextItems.push({
         annotations: [
           {
             lineNumber: 1,
             metadata: {
               header: (
-                <SourceDescriptionBody
-                  author={sourceAuthor}
-                  description={sourceDescription}
-                  layoutKey={sourceDescriptionLayoutKey}
-                  onLayoutReady={markSourceDescriptionLayoutReady}
-                />
+                <>
+                  <SourceDescriptionBody
+                    author={sourceAuthor}
+                    canEdit={canEditSourceDescription}
+                    description={sourceDescription}
+                    keymap={keymap}
+                    layoutKey={sourceDescriptionLayoutKey}
+                    onLayoutReady={markSourceDescriptionLayoutReady}
+                    onUpdateDescription={onUpdateSourceDescription}
+                    onUploadDescriptionAsset={onUploadSourceDescriptionAsset}
+                  />
+                  {sourceDescriptionFooter ? (
+                    <div className="codiff-source-description-footer">
+                      {sourceDescriptionFooter}
+                    </div>
+                  ) : null}
+                </>
               ),
               type: 'walkthrough-header',
             },
           } satisfies LineAnnotation<ReviewAnnotationMetadata>,
-        ].filter(() => sourceDescriptionHasBody && !sourceDescriptionCollapsed),
+        ].filter(
+          () =>
+            (sourceDescriptionHasBody || canEditSourceDescription) && !sourceDescriptionCollapsed,
+        ),
         // The header (rendered via renderCustomHeader) carries the title; the body is the
-        // collapsible content. A title-only card has nothing to fold, so it stays collapsed.
+        // collapsible content.
         collapsed: sourceDescriptionCollapsed,
         file: {
           cacheKey: sourceDescriptionLayoutKey,
@@ -2547,6 +2926,7 @@ export function ReviewCodeView({
     };
   }, [
     collapsed,
+    canEditSourceDescription,
     commitDetailsItemId,
     commitDetailsCollapsed,
     commitDetailsLayoutPass,
@@ -2559,16 +2939,21 @@ export function ReviewCodeView({
     imagePreviewLayoutPassBySection,
     isReadOnly,
     itemVersionByKey,
+    keymap,
     markSourceDescriptionLayoutReady,
     markdownPreviewLayoutPassBySection,
     markdownPreviewSections,
     onLoadImageContent,
+    onUpdateSourceDescription,
+    onUploadSourceDescriptionAsset,
     reviewBlocks,
     selectedPath,
     showWhitespace,
     sourceAuthor,
     sourceDescription,
     sourceDescriptionCollapsed,
+    sourceDescriptionFooter,
+    sourceDescriptionFooterKey,
     sourceDescriptionHasBody,
     sourceDescriptionItemId,
     sourceDescriptionLayoutPass,
@@ -3323,10 +3708,12 @@ export function ReviewCodeView({
         return (
           <SourceDescriptionHeader
             actions={sourceDescriptionActions}
-            canCollapse={sourceDescription.length > 0}
+            canCollapse={sourceDescription.length > 0 || canEditSourceDescription}
+            canEditTitle={canEditSourceTitle}
             isCollapsed={sourceDescriptionCollapsed}
             label={sourceDescriptionLabel}
             onToggleCollapsed={toggleSourceDescriptionCollapsed}
+            onUpdateTitle={onUpdateSourceTitle}
             title={sourceTitle}
           />
         );
@@ -3352,6 +3739,8 @@ export function ReviewCodeView({
       commitDetailsCollapsed,
       commitMetadata,
       allowViewedToggle,
+      canEditSourceDescription,
+      canEditSourceTitle,
       itemMetadata,
       isReadOnly,
       loadingSectionIds,
@@ -3359,6 +3748,7 @@ export function ReviewCodeView({
       onOpenFile,
       onToggleCollapsed,
       onToggleViewed,
+      onUpdateSourceTitle,
       sourceDescription,
       sourceDescriptionCollapsed,
       sourceDescriptionItemId,
