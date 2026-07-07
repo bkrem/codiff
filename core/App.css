@@ -1330,9 +1330,42 @@ html[data-codiff-platform='darwin'] .sidebar {
   font-weight: 700;
 }
 
-.sidebar-walkthrough-status.codex strong {
+.sidebar-walkthrough-status.codex .walkthrough-progress {
   animation: codex-loading-pulse 1600ms ease-in-out infinite;
+  color: var(--sidebar-text);
   user-select: none;
+}
+
+.walkthrough-progress {
+  align-items: baseline;
+  display: flex;
+  font-weight: 400;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+}
+
+.walkthrough-progress-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.walkthrough-progress-timer {
+  flex: 0 0 2ch;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.5ch;
+  text-align: left;
+  visibility: hidden;
+  width: 2ch;
+}
+
+.walkthrough-progress-timer.visible {
+  visibility: visible;
+}
+
+.walkthrough-progress .walkthrough-progress-timer {
+  overflow: visible;
 }
 
 .sidebar-comment-list.history-list {

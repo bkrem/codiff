@@ -714,9 +714,10 @@ ${JSON.stringify(buildPromptInput(state), null, 2)}
 
 const readNarrativeWalkthrough = async (state, agent, agentOptions, context, customPrompt) => {
   try {
-    const prompt = buildNarrativeWalkthroughPrompt(state, context, agent.label, customPrompt);
     const timeoutMs = getNarrativeWalkthroughTimeoutMs(state, agent.defaultTimeoutMs);
     const { fileCount, hunkCount } = getWalkthroughSize(state);
+    const prompt = buildNarrativeWalkthroughPrompt(state, context, agent.label, customPrompt);
+    agentOptions?.onProgress?.('agent-generation');
     const response = await agent.run(
       state.root,
       prompt,
@@ -725,6 +726,7 @@ const readNarrativeWalkthrough = async (state, agent, agentOptions, context, cus
       `${agent.label} walkthrough timed out after ${Math.ceil(timeoutMs / 1_000)} seconds while processing ${fileCount} files and ${hunkCount} reviewable hunks.`,
       { ...agentOptions, timeoutMs },
     );
+    agentOptions?.onProgress?.('response-received');
     const parsed = parseJSONMessage(response);
     const walkthrough = normalizeNarrativeWalkthrough(parsed, state.files, {
       agent: agent.id,

@@ -26,7 +26,7 @@ const {
     schema: unknown,
     outputName?: string,
     timeoutMessage?: string,
-    options?: { model?: string; timeoutMs?: number },
+    options?: { model?: string; onProgress?: (phase: string) => void; timeoutMs?: number },
   ) => Promise<string>;
 };
 
@@ -97,10 +97,80 @@ process.stdin.on('end', () => {
 
     const args = (await readFile(argsPath, 'utf8')).trim().split('\n');
     expect(args).toContain('-p');
+    expect(args).toContain('json');
+    expect(args).not.toContain('stream-json');
+    expect(args).not.toContain('--include-partial-messages');
     expect(args).toContain('--json-schema');
     expect(args).toContain('--add-dir');
     expect(args).toContain(directory);
     expect(args).toContain('--no-session-persistence');
+  } finally {
+    if (previousClaudePath == null) {
+      delete process.env.CODIFF_CLAUDE_PATH;
+    } else {
+      process.env.CODIFF_CLAUDE_PATH = previousClaudePath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('maps Claude thinking and text deltas to semantic walkthrough progress', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-claude-progress-'));
+  const fakeClaudePath = join(directory, 'claude');
+  const argsPath = join(directory, 'args.txt');
+  const previousClaudePath = process.env.CODIFF_CLAUDE_PATH;
+  const events = [
+    {
+      event: {
+        delta: { thinking: 'Planning', type: 'thinking_delta' },
+        type: 'content_block_delta',
+      },
+      type: 'stream_event',
+    },
+    {
+      event: {
+        delta: { text: '{"version":1}', type: 'text_delta' },
+        type: 'content_block_delta',
+      },
+      type: 'stream_event',
+    },
+    {
+      is_error: false,
+      result: '{"version":1}',
+      structured_output: { version: 1 },
+      type: 'result',
+    },
+  ];
+
+  try {
+    await writeFile(
+      fakeClaudePath,
+      `#!/usr/bin/env node
+require('node:fs').writeFileSync(
+  ${JSON.stringify(argsPath)},
+  process.argv.slice(2).join('\\n'),
+);
+process.stdin.resume();
+process.stdin.on('end', () => {
+  process.stdout.write(${JSON.stringify(events.map((event) => JSON.stringify(event)).join('\n'))});
+});
+`,
+    );
+    await chmod(fakeClaudePath, 0o755);
+    process.env.CODIFF_CLAUDE_PATH = fakeClaudePath;
+    const phases: Array<string> = [];
+
+    await expect(
+      runClaude(directory, 'prompt', { type: 'object' }, 'walkthrough.json', 'Timed out.', {
+        onProgress: (phase) => phases.push(phase),
+      }),
+    ).resolves.toBe('{"version":1}');
+
+    expect(phases).toEqual(['agent-generation', 'response-received']);
+    const args = (await readFile(argsPath, 'utf8')).split('\n');
+    expect(args).toContain('stream-json');
+    expect(args).toContain('--verbose');
+    expect(args).toContain('--include-partial-messages');
   } finally {
     if (previousClaudePath == null) {
       delete process.env.CODIFF_CLAUDE_PATH;

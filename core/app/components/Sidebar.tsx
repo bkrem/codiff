@@ -31,6 +31,7 @@ import type { ChangedFile, HistoryEntry, NarrativeWalkthrough, ReviewSource } fr
 import { Gravatar } from './Gravatar.tsx';
 import { NarrativeSidebar } from './walkthrough/NarrativeSidebar.tsx';
 import type { NarrativeNavigation } from './walkthrough/useNarrativeNavigation.ts';
+import { WalkthroughProgress } from './walkthrough/WalkthroughProgress.tsx';
 
 export function Sidebar({
   branchSource,
@@ -63,6 +64,7 @@ export function Sidebar({
   walkthroughError,
   walkthroughLoading,
   walkthroughOutdatedPaths,
+  walkthroughProgress,
   walkthroughUnread,
 }: {
   branchSource: Extract<ReviewSource, { type: 'branch-diff' }> | null;
@@ -95,6 +97,11 @@ export function Sidebar({
   walkthroughError: WalkthroughError | null;
   walkthroughLoading: boolean;
   walkthroughOutdatedPaths: ReadonlySet<string>;
+  walkthroughProgress: {
+    phase: import('../../types.ts').WalkthroughProgressPhase | null;
+    responseLabelIndex: number;
+    stageRevision: number;
+  };
   walkthroughUnread: boolean;
 }) {
   const allowSelectionScroll = useRef(false);
@@ -366,7 +373,11 @@ export function Sidebar({
           {walkthroughLoading ? (
             <div className="sidebar-walkthrough-status-shell">
               <div className="sidebar-walkthrough-status codex">
-                <strong>Generating walkthrough…</strong>
+                <WalkthroughProgress
+                  phase={walkthroughProgress.phase}
+                  responseLabelIndex={walkthroughProgress.responseLabelIndex}
+                  stageRevision={walkthroughProgress.stageRevision}
+                />
               </div>
             </div>
           ) : walkthroughError ? (

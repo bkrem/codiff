@@ -32,6 +32,7 @@ const {
     timeoutMessage?: string,
     options?: {
       model?: string;
+      onProgress?: (phase: string) => void;
       reasoningEffort?: 'low' | 'medium' | 'high';
       timeoutMs?: number;
     },
@@ -157,10 +158,165 @@ exit 1
 
     const args = (await readFile(argsPath, 'utf8')).trim().split('\n');
     expect(args).toContain('--ephemeral');
+    expect(args).toContain('--json');
     expect(args).toContain('--cd');
     expect(args).toContain('/repo');
     expect(args).toContain('model_reasoning_effort="high"');
     expect(args).not.toContain('resume');
+  } finally {
+    if (previousCodexPath == null) {
+      delete process.env.CODIFF_CODEX_PATH;
+    } else {
+      process.env.CODIFF_CODEX_PATH = previousCodexPath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('streams Codex app-server reasoning and message deltas as semantic progress', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-codex-progress-'));
+  const fakeCodexPath = join(directory, 'codex');
+  const requestsPath = join(directory, 'requests.txt');
+  const previousCodexPath = process.env.CODIFF_CODEX_PATH;
+
+  try {
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const readline = require('node:readline');
+const requestsPath = ${JSON.stringify(requestsPath)};
+for (const arg of process.argv.slice(2)) {
+  appendFileSync(requestsPath, JSON.stringify({ arg }) + '\\n');
+}
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  appendFileSync(requestsPath, JSON.stringify({ message }) + '\\n');
+  if (message.method === 'initialize') {
+    send({ id: message.id, result: {} });
+  } else if (message.method === 'thread/start') {
+    send({ id: message.id, result: { thread: { id: 'thread-1' } } });
+    send({ method: 'thread/started', params: { thread: { id: 'thread-1' } } });
+  } else if (message.method === 'turn/start') {
+    send({ id: message.id, result: { turn: { id: 'turn-1' } } });
+    send({ method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } });
+    send({
+      method: 'item/started',
+      params: { item: { id: 'reasoning-1', type: 'reasoning' } },
+    });
+    send({
+      method: 'item/reasoning/summaryTextDelta',
+      params: { delta: 'Reasoning privately.' },
+    });
+    send({
+      method: 'item/agentMessage/delta',
+      params: { delta: '{"version":' },
+    });
+    send({
+      method: 'item/agentMessage/delta',
+      params: { delta: '1}' },
+    });
+    send({
+      method: 'item/completed',
+      params: { item: { text: '{"version":1}', type: 'agentMessage' } },
+    });
+    send({
+      method: 'turn/completed',
+      params: { turn: { items: [], status: 'completed' } },
+    });
+  }
+});
+`,
+    );
+    await chmod(fakeCodexPath, 0o755);
+    process.env.CODIFF_CODEX_PATH = fakeCodexPath;
+    const phases: Array<string> = [];
+
+    await expect(
+      runCodex(directory, 'prompt', {}, 'walkthrough.json', 'Timed out.', {
+        onProgress: (phase) => phases.push(phase),
+      }),
+    ).resolves.toBe('{"version":1}');
+
+    expect(phases).toEqual([
+      'agent-generation',
+      'agent-generation',
+      'agent-generation',
+      'agent-generation',
+      'response-received',
+      'response-received',
+      'response-received',
+    ]);
+
+    const records = (await readFile(requestsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(records.filter((record) => record.arg).map((record) => record.arg)).toContain(
+      'app-server',
+    );
+    const threadStart = records.find((record) => record.message?.method === 'thread/start').message;
+    expect(threadStart.params).toMatchObject({
+      approvalPolicy: 'never',
+      cwd: directory,
+      ephemeral: true,
+      sandbox: 'read-only',
+    });
+    const turnStart = records.find((record) => record.message?.method === 'turn/start').message;
+    expect(turnStart.params).toMatchObject({
+      approvalPolicy: 'never',
+      cwd: directory,
+      effort: 'high',
+      outputSchema: {},
+      sandboxPolicy: {
+        networkAccess: false,
+        type: 'readOnly',
+      },
+      threadId: 'thread-1',
+    });
+  } finally {
+    if (previousCodexPath == null) {
+      delete process.env.CODIFF_CODEX_PATH;
+    } else {
+      process.env.CODIFF_CODEX_PATH = previousCodexPath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('falls back to codex exec when app-server is unavailable', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-codex-app-server-fallback-'));
+  const fakeCodexPath = join(directory, 'codex');
+  const previousCodexPath = process.env.CODIFF_CODEX_PATH;
+
+  try {
+    await writeFile(
+      fakeCodexPath,
+      `#!/bin/sh
+if [ "$1" = "app-server" ]; then
+  printf '%s\\n' "error: unrecognized subcommand 'app-server'" >&2
+  exit 2
+fi
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then
+    shift
+    printf '{"version":1}' > "$1"
+    exit 0
+  fi
+  shift
+done
+exit 1
+`,
+    );
+    await chmod(fakeCodexPath, 0o755);
+    process.env.CODIFF_CODEX_PATH = fakeCodexPath;
+
+    await expect(
+      runCodex(directory, 'prompt', {}, 'walkthrough.json', 'Timed out.', {
+        onProgress: () => {},
+      }),
+    ).resolves.toBe('{"version":1}');
   } finally {
     if (previousCodexPath == null) {
       delete process.env.CODIFF_CODEX_PATH;

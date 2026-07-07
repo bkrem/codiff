@@ -31,6 +31,7 @@ import type {
   WalkthroughCommitMessageResult,
   WalkthroughCommitRequest,
   WalkthroughCommitResult,
+  WalkthroughProgressEvent,
 } from './types.ts';
 
 declare module '*.css';
@@ -80,6 +81,7 @@ declare global {
       onRefreshRequest: (callback: () => void) => () => void;
       onRepositoryChanged: (callback: (change: { root: string }) => void) => () => void;
       onWalkthroughCommitOutput: (callback: (chunk: string) => void) => () => void;
+      onWalkthroughProgress: (callback: (progress: WalkthroughProgressEvent) => void) => () => void;
       onWindowFullScreenChanged: (callback: (isFullScreen: boolean) => void) => () => void;
       openConfigFile: () => Promise<void>;
       openFile: (path: string) => Promise<void>;

@@ -217,6 +217,12 @@ export type CodiffFeatureFlags = {
   walkthroughSharing: boolean;
 };
 
+export type WalkthroughProgressPhase = 'agent-generation' | 'response-received';
+
+export type WalkthroughProgressEvent = {
+  phase: WalkthroughProgressPhase;
+};
+
 export type CodiffMarkdownDocument = {
   content: string;
   id: string;

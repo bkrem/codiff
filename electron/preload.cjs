@@ -99,6 +99,12 @@ const codiff = {
     ipcRenderer.on('codiff:repositoryChanged', listener);
     return () => ipcRenderer.removeListener('codiff:repositoryChanged', listener);
   },
+  onWalkthroughProgress: (callback) => {
+    /** @param {Electron.IpcRendererEvent} _event @param {import('../core/types.ts').WalkthroughProgressEvent} progress */
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on('codiff:walkthroughProgress', listener);
+    return () => ipcRenderer.removeListener('codiff:walkthroughProgress', listener);
+  },
   onRefreshRequest: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('codiff:refreshRequest', listener);

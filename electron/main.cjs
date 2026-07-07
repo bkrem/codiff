@@ -102,6 +102,7 @@ const {
 const { getPlanReviewPath, readPlanReview, writePlanReview } = require('./plan-review.cjs');
 const { createSharedPlanSnapshot } = require('./shared-plan.cjs');
 const { readLocalIdentity } = require('./local-identity.cjs');
+const { createWalkthroughProgressReporter } = require('./walkthrough-progress.cjs');
 
 /**
  * @typedef {import('../core/config/types.ts').CodiffConfig} CodiffConfig
@@ -130,6 +131,8 @@ const windowRepositories = new Map();
 const windowLaunchOptions = new Map();
 /** @type {Map<number, Promise<RepositoryState>>} */
 const windowInitialRepositoryStates = new Map();
+/** @type {Map<number, number>} */
+const walkthroughProgressGenerations = new Map();
 /** @type {Map<number, string>} */
 const planInitialVersions = new Map();
 /** @type {Set<number>} */
@@ -1080,6 +1083,7 @@ const createWindow = (
     readyPlanWindows.delete(webContentsId);
     windowIdentities.delete(webContentsId);
     windowInitialRepositoryStates.delete(webContentsId);
+    walkthroughProgressGenerations.delete(webContentsId);
     windowRepositories.delete(webContentsId);
     windowLaunchOptions.delete(webContentsId);
   });
@@ -1494,6 +1498,13 @@ ipcMain.handle('codiff:installTerminalHelper', async (event) => {
 
 ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source) => {
   const launchOptions = windowLaunchOptions.get(event.sender.id);
+  const progressGeneration = (walkthroughProgressGenerations.get(event.sender.id) || 0) + 1;
+  walkthroughProgressGenerations.set(event.sender.id, progressGeneration);
+  const reportProgress = createWalkthroughProgressReporter(
+    event.sender,
+    () => walkthroughProgressGenerations.get(event.sender.id) === progressGeneration,
+  );
+
   try {
     const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
     const state = await readRepositoryStateWithConfig(
@@ -1503,9 +1514,23 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source) => {
     const agent = resolveWindowAgent(event.sender.id);
     const walkthroughFile = launchOptions?.walkthroughFile;
     if (walkthroughFile) {
+      let contents;
       let input;
       try {
-        input = JSON.parse(readFileSync(walkthroughFile, 'utf8'));
+        contents = readFileSync(walkthroughFile, 'utf8');
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          reason: `Could not read walkthrough file: ${detail}`,
+          status: 'unavailable',
+        };
+      }
+
+      const sessionContext = await Promise.resolve(
+        agent.readSessionContext(launchOptions?.[agent.sessionLaunchOptionKey]),
+      ).catch(() => null);
+      try {
+        input = JSON.parse(contents);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         return {
@@ -1515,9 +1540,6 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source) => {
       }
 
       try {
-        const sessionContext = await Promise.resolve(
-          agent.readSessionContext(launchOptions?.[agent.sessionLaunchOptionKey]),
-        ).catch(() => null);
         return {
           status: 'ready',
           walkthrough: normalizeNarrativeWalkthrough(input, state.files, {
@@ -1553,7 +1575,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source) => {
     return readNarrativeWalkthrough(
       state,
       agent,
-      getAgentOptions(agent),
+      { ...getAgentOptions(agent), onProgress: reportProgress },
       walkthroughContext,
       config.settings.walkthroughPrompt,
     );

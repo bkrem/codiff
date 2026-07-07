@@ -21,6 +21,7 @@ import type {
   PlanReview,
   RepositoryState,
   ReviewSource,
+  WalkthroughProgressEvent,
 } from '../types.ts';
 import { createChangedFile } from './helpers/fixtures.ts';
 import { renderReact, waitFor } from './helpers/react.tsx';
@@ -183,6 +184,7 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
   onRefreshRequest: vi.fn(() => () => {}),
   onRepositoryChanged: vi.fn(() => () => {}),
   onWalkthroughCommitOutput: vi.fn(() => () => {}),
+  onWalkthroughProgress: vi.fn(() => () => {}),
   onWindowFullScreenChanged: vi.fn(() => () => {}),
   openConfigFile: vi.fn(async () => {}),
   openFile: vi.fn(async () => {}),
@@ -2974,6 +2976,87 @@ test('walkthrough launch errors stay on the walkthrough tab without automatic re
     container.remove();
   }
 });
+
+test('walkthrough progress events replace the loading line without exposing agent output', async () => {
+  const changedFile = {
+    fingerprint: 'src/app.ts:1',
+    path: 'src/app.ts',
+    sections: [
+      {
+        binary: false,
+        id: 'src/app.ts:unstaged',
+        kind: 'unstaged',
+        patch: 'diff --git a/src/app.ts b/src/app.ts\n@@ -1 +1 @@\n-old\n+new\n',
+      },
+    ],
+    status: 'modified',
+  } satisfies ChangedFile;
+  let onProgress: ((progress: WalkthroughProgressEvent) => void) | null = null;
+  let resolveWalkthrough: ((result: { reason: string; status: 'unavailable' }) => void) | null =
+    null;
+  const getNarrativeWalkthrough = vi.fn(
+    () =>
+      new Promise<{ reason: string; status: 'unavailable' }>((resolve) => {
+        resolveWalkthrough = resolve;
+      }),
+  );
+
+  window.codiff = createCodiffMock({
+    getLaunchOptions: vi.fn(async () => ({
+      repositoryPathProvided: true,
+      walkthrough: true,
+    })),
+    getNarrativeWalkthrough,
+    getRepositoryState: vi.fn(async () => ({
+      ...repositoryState,
+      files: [changedFile],
+    })),
+    onWalkthroughProgress: vi.fn((callback) => {
+      onProgress = callback;
+      return () => {
+        onProgress = null;
+      };
+    }),
+  });
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('Generating walkthrough…');
+    });
+
+    await act(async () => {
+      onProgress?.({ phase: 'agent-generation' });
+    });
+    expect(container.textContent).toContain('Analyzing changes…');
+    expect(container.textContent).not.toContain('Generating walkthrough…');
+
+    await act(async () => {
+      onProgress?.({ phase: 'response-received' });
+    });
+    expect(container.textContent).toContain('Building walkthrough…');
+    expect(container.querySelector('.wt-generation')).toBeNull();
+
+    await act(async () => {
+      resolveWalkthrough?.({ reason: 'Stopped for test.', status: 'unavailable' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
 test('history filter matches commits by author name', async () => {
   window.codiff = createCodiffMock({
     getRepositoryHistory: vi.fn(async () => ({

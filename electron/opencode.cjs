@@ -1,6 +1,7 @@
 // @ts-check
 
 const { spawn } = require('node:child_process');
+const { createServer } = require('node:net');
 const { homedir } = require('node:os');
 const { join } = require('node:path');
 const {
@@ -16,6 +17,7 @@ const DEFAULT_OPENCODE_MODEL = 'opencode-default';
 const FALLBACK_OPENCODE_MODEL = DEFAULT_OPENCODE_MODEL;
 const OPENCODE_COMMAND_MODEL_PLACEHOLDER = '{{CODIFF_OPENCODE_MODEL}}';
 const OPENCODE_NOT_FOUND_CODE = 'OPENCODE_NOT_FOUND';
+const OPENCODE_STREAMING_UNAVAILABLE_CODE = 'OPENCODE_STREAMING_UNAVAILABLE';
 const OPENCODE_NOT_FOUND_MESSAGE =
   'OpenCode CLI was not found. Install OpenCode and verify `opencode --version` works in Terminal. Codiff searches PATH, ~/.opencode/bin/opencode, /opt/homebrew/bin/opencode, and /usr/local/bin/opencode. If OpenCode is installed somewhere else, launch Codiff with `CODIFF_OPENCODE_PATH=/absolute/path/to/opencode codiff -w`.';
 
@@ -82,6 +84,19 @@ const getOpenCodeLaunchError = (error) => {
   return error instanceof Error ? error : new Error(String(error ?? ''));
 };
 
+/** @param {unknown} error */
+const isOpenCodeStreamingUnavailableError = (error) =>
+  Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    error.code === OPENCODE_STREAMING_UNAVAILABLE_CODE,
+  );
+
+/** @param {unknown} error */
+const createOpenCodeStreamingUnavailableError = (error) =>
+  Object.assign(getOpenCodeLaunchError(error), { code: OPENCODE_STREAMING_UNAVAILABLE_CODE });
+
 /** @param {unknown} value @returns {string} */
 const normalizeOpenCodeModel = (value) => {
   const model = typeof value === 'string' ? value.trim() : '';
@@ -138,6 +153,166 @@ const readOpenCodeText = (output) => {
 const normalizeOpenCodeOutput = (output, schema) =>
   normalizeStructuredOutput(readOpenCodeText(output), schema, 'OpenCode');
 
+const reserveOpenCodePort = () =>
+  new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : null;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else if (port == null) {
+          reject(new Error('OpenCode could not reserve a local server port.'));
+        } else {
+          resolve(port);
+        }
+      });
+    });
+  });
+
+/** @param {string} output */
+const readOpenCodeServerText = (output) => {
+  try {
+    const response = JSON.parse(output);
+    if (response?.info?.error) {
+      throw new Error(
+        oneLine(
+          response.info.error?.data?.message || response.info.error?.name,
+          'OpenCode reported an error.',
+        ),
+      );
+    }
+    const parts = Array.isArray(response?.parts) ? response.parts : [];
+    const text = parts
+      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n');
+    return text;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return output;
+    }
+    throw error;
+  }
+};
+
+/**
+ * @param {unknown} input
+ * @param {string} sessionId
+ * @param {(phase: import('../core/types.ts').WalkthroughProgressPhase) => void} onProgress
+ * @param {{assistantMessageIds: Set<string>; textParts: Map<string, string>}} state
+ */
+const handleOpenCodeProgressEvent = (input, sessionId, onProgress, state) => {
+  const event = /** @type {any} */ (input)?.payload || input;
+  const properties = event?.properties;
+  if (
+    !event ||
+    typeof event !== 'object' ||
+    typeof event.type !== 'string' ||
+    properties?.sessionID !== sessionId
+  ) {
+    return;
+  }
+
+  if (event.type === 'message.updated' && properties.info?.role === 'assistant') {
+    state.assistantMessageIds.add(properties.info.id);
+    return;
+  }
+
+  const messageId =
+    properties.assistantMessageID || properties.messageID || properties.part?.messageID;
+  const isAssistantMessage =
+    event.type.startsWith('session.next.') || state.assistantMessageIds.has(messageId);
+  if (!isAssistantMessage) {
+    return;
+  }
+
+  if (
+    event.type.startsWith('session.next.reasoning.') ||
+    (event.type === 'message.part.updated' &&
+      ['reasoning', 'step-start'].includes(properties.part?.type))
+  ) {
+    onProgress('agent-generation');
+    return;
+  }
+
+  if (
+    event.type === 'session.next.text.started' ||
+    event.type === 'session.next.text.delta' ||
+    (event.type === 'message.part.updated' && properties.part?.type === 'text')
+  ) {
+    onProgress('response-received');
+  }
+
+  if (
+    event.type === 'message.part.delta' &&
+    properties.field === 'text' &&
+    typeof properties.delta === 'string'
+  ) {
+    const partId = String(properties.partID || state.textParts.size);
+    state.textParts.set(partId, `${state.textParts.get(partId) || ''}${properties.delta}`);
+    onProgress('response-received');
+  }
+};
+
+/**
+ * @param {Response} response
+ * @param {string} sessionId
+ * @param {(phase: import('../core/types.ts').WalkthroughProgressPhase) => void} onProgress
+ * @param {{assistantMessageIds: Set<string>; textParts: Map<string, string>}} state
+ */
+const consumeOpenCodeEventStream = async (response, sessionId, onProgress, state) => {
+  if (!response.body) {
+    throw createOpenCodeStreamingUnavailableError(
+      new Error('OpenCode did not provide an event stream.'),
+    );
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let frameEnd = buffer.search(/\r?\n\r?\n/);
+    while (frameEnd !== -1) {
+      const frame = buffer.slice(0, frameEnd);
+      const separator = buffer.slice(frameEnd).match(/^\r?\n\r?\n/)?.[0] || '\n\n';
+      buffer = buffer.slice(frameEnd + separator.length);
+      for (const line of frame.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) {
+          continue;
+        }
+        const data = line.slice(5).trim();
+        if (!data) {
+          continue;
+        }
+        try {
+          handleOpenCodeProgressEvent(JSON.parse(data), sessionId, onProgress, state);
+        } catch {
+          // Ignore malformed diagnostics without exposing them to the renderer.
+        }
+      }
+      frameEnd = buffer.search(/\r?\n\r?\n/);
+    }
+  }
+};
+
+/** @param {string} model */
+const getOpenCodeServerModel = (model) => {
+  if (model === DEFAULT_OPENCODE_MODEL) {
+    return undefined;
+  }
+  const [providerID, ...modelParts] = model.split('/');
+  return { modelID: modelParts.join('/'), providerID };
+};
+
 /**
  * @param {string} repoRoot
  * @param {string} prompt
@@ -149,6 +324,7 @@ const normalizeOpenCodeOutput = (output, schema) =>
  *   model?: string;
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
  *   onPartialText?: (delta: string) => void;
+ *   onProgress?: (phase: import('../core/types.ts').WalkthroughProgressPhase) => void;
  *   timeoutMs?: number;
  * }} [options]
  */
@@ -166,7 +342,7 @@ const runOpenCode = async (
   const effectivePrompt = `${prompt}${buildSchemaReminder(schema)}`;
 
   /** @param {string} openCodeModel */
-  const invokeOpenCode = (openCodeModel) =>
+  const invokeOpenCodeCli = (openCodeModel) =>
     /** @type {Promise<string>} */ (
       new Promise((resolve, reject) => {
         let stderr = '';
@@ -250,6 +426,207 @@ const runOpenCode = async (
         child.stdin.end(effectivePrompt, () => {});
       })
     );
+
+  /** @param {string} openCodeModel */
+  const invokeOpenCodeServer = async (openCodeModel) => {
+    const opencodeCommand = getOpenCodeCommand();
+    const port = await reserveOpenCodePort();
+    const child = spawn(
+      opencodeCommand,
+      ['serve', '--pure', '--hostname=127.0.0.1', `--port=${port}`],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          OPENCODE_PERMISSION: JSON.stringify({ '*': 'deny' }),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const abortController = new AbortController();
+    let baseUrl = '';
+    let sessionId = '';
+    let startupOutput = '';
+    let timeout;
+
+    try {
+      baseUrl = await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (callback, value) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          callback(value);
+        };
+        timeout = setTimeout(
+          () => {
+            finish(
+              reject,
+              createOpenCodeStreamingUnavailableError(
+                new Error('Timed out waiting for the OpenCode event server to start.'),
+              ),
+            );
+          },
+          Math.min(timeoutMs, 5_000),
+        );
+        child.stdout.on('data', (chunk) => {
+          startupOutput += chunk.toString();
+          for (const line of startupOutput.split(/\r?\n/)) {
+            const match = line.match(/opencode server listening.*\bon\s+(https?:\/\/\S+)/);
+            if (match) {
+              clearTimeout(timeout);
+              finish(resolve, match[1]);
+              return;
+            }
+          }
+        });
+        child.stderr.on('data', (chunk) => {
+          startupOutput += chunk.toString();
+        });
+        child.on('error', (error) => {
+          clearTimeout(timeout);
+          finish(reject, createOpenCodeStreamingUnavailableError(error));
+        });
+        child.on('close', (code, signal) => {
+          clearTimeout(timeout);
+          finish(
+            reject,
+            createOpenCodeStreamingUnavailableError(
+              new Error(
+                oneLine(
+                  startupOutput,
+                  signal
+                    ? `OpenCode event server was terminated by ${signal}.`
+                    : `OpenCode event server exited with code ${code}.`,
+                ),
+              ),
+            ),
+          );
+        });
+      });
+
+      timeout = setTimeout(() => abortController.abort(new Error(timeoutMessage)), timeoutMs);
+      const directory = new URLSearchParams({ directory: repoRoot });
+      const request = async (path, init) => {
+        try {
+          return await fetch(`${baseUrl}${path}?${directory}`, {
+            ...init,
+            signal: abortController.signal,
+          });
+        } catch (error) {
+          if (abortController.signal.aborted) {
+            throw abortController.signal.reason;
+          }
+          throw createOpenCodeStreamingUnavailableError(error);
+        }
+      };
+      const sessionResponse = await request('/session', {
+        body: JSON.stringify({
+          agent: 'build',
+          permission: [{ action: 'deny', pattern: '*', permission: '*' }],
+          title: 'Codiff walkthrough',
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+      if (!sessionResponse.ok) {
+        throw createOpenCodeStreamingUnavailableError(
+          new Error(
+            oneLine(
+              await sessionResponse.text(),
+              `OpenCode session creation failed with status ${sessionResponse.status}.`,
+            ),
+          ),
+        );
+      }
+      const session = await sessionResponse.json();
+      sessionId = typeof session?.id === 'string' ? session.id : '';
+      if (!sessionId) {
+        throw createOpenCodeStreamingUnavailableError(
+          new Error('OpenCode session creation did not return a session ID.'),
+        );
+      }
+
+      const eventResponse = await request('/event', {
+        headers: { accept: 'text/event-stream' },
+      });
+      if (
+        !eventResponse.ok ||
+        !eventResponse.headers.get('content-type')?.includes('text/event-stream')
+      ) {
+        throw createOpenCodeStreamingUnavailableError(
+          new Error(`OpenCode event streaming is unavailable (${eventResponse.status}).`),
+        );
+      }
+      const progressState = { assistantMessageIds: new Set(), textParts: new Map() };
+      const eventStream = consumeOpenCodeEventStream(
+        eventResponse,
+        sessionId,
+        options.onProgress,
+        progressState,
+      ).catch(() => {});
+
+      const model = getOpenCodeServerModel(openCodeModel);
+      const promptResponse = await request(`/session/${encodeURIComponent(sessionId)}/message`, {
+        body: JSON.stringify({
+          agent: 'build',
+          ...(model ? { model } : {}),
+          parts: [{ text: effectivePrompt, type: 'text' }],
+          tools: {},
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+      const responseText = await promptResponse.text();
+      if (!promptResponse.ok) {
+        if ([404, 405].includes(promptResponse.status)) {
+          throw createOpenCodeStreamingUnavailableError(
+            new Error(`OpenCode streaming prompt is unavailable (${promptResponse.status}).`),
+          );
+        }
+        throw new Error(
+          oneLine(responseText, `OpenCode request failed with status ${promptResponse.status}.`),
+        );
+      }
+
+      const output = readOpenCodeServerText(responseText);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const streamedText = [...progressState.textParts.values()].join('\n');
+      abortController.abort();
+      await eventStream;
+      return normalizeStructuredOutput(output || streamedText, schema, 'OpenCode');
+    } finally {
+      clearTimeout(timeout);
+      if (baseUrl && sessionId) {
+        await fetch(
+          `${baseUrl}/session/${encodeURIComponent(sessionId)}?${new URLSearchParams({
+            directory: repoRoot,
+          })}`,
+          { method: 'DELETE', signal: AbortSignal.timeout(500) },
+        ).catch(() => {});
+      }
+      abortController.abort();
+      if (!child.killed) {
+        child.kill('SIGTERM');
+      }
+    }
+  };
+
+  /** @param {string} openCodeModel */
+  const invokeOpenCode = async (openCodeModel) => {
+    if (!options.onProgress) {
+      return invokeOpenCodeCli(openCodeModel);
+    }
+    try {
+      return await invokeOpenCodeServer(openCodeModel);
+    } catch (error) {
+      if (!isOpenCodeStreamingUnavailableError(error)) {
+        throw error;
+      }
+      return invokeOpenCodeCli(openCodeModel);
+    }
+  };
 
   try {
     return await invokeOpenCode(model);

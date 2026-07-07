@@ -30,6 +30,10 @@ import {
   type WalkthroughReviewTarget,
 } from './app/components/walkthrough/NarrativeWalkthroughView.tsx';
 import { useNarrativeNavigation } from './app/components/walkthrough/useNarrativeNavigation.ts';
+import {
+  nextWalkthroughResponseLabelIndex,
+  WalkthroughProgress,
+} from './app/components/walkthrough/WalkthroughProgress.tsx';
 import type { WalkthroughFileError } from './app/components/WalkthroughFileError.tsx';
 import { createDefaultConfig } from './config/defaults.ts';
 import { getShortcutLabel, matchesShortcut } from './config/keymap.ts';
@@ -130,6 +134,7 @@ import type {
   NarrativeWalkthrough,
   WalkthroughCommitMessageRequest,
   WalkthroughCommitRequest,
+  WalkthroughProgressEvent,
   DiffSection,
 } from './types.ts';
 
@@ -272,6 +277,11 @@ export default function App() {
     null,
   );
   const [walkthroughLoading, setWalkthroughLoading] = useState(false);
+  const [walkthroughProgress, setWalkthroughProgress] = useState<{
+    phase: WalkthroughProgressEvent['phase'] | null;
+    responseLabelIndex: number;
+    stageRevision: number;
+  }>({ phase: null, responseLabelIndex: -1, stageRevision: 0 });
   const [walkthroughOutdatedPaths, setWalkthroughOutdatedPaths] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -647,6 +657,13 @@ export default function App() {
       setSidebarMode(
         shouldLoadNarrative ? 'walkthrough' : shouldStartInHistory ? 'history' : 'tree',
       );
+      if (shouldLoadNarrative) {
+        setWalkthroughProgress((current) => ({
+          phase: null,
+          responseLabelIndex: nextWalkthroughResponseLabelIndex(current.responseLabelIndex),
+          stageRevision: current.stageRevision + 1,
+        }));
+      }
       setWalkthroughLoading(shouldLoadNarrative);
 
       // Always consult the main process for a pre-authored walkthrough file, even
@@ -750,6 +767,22 @@ export default function App() {
     () =>
       window.codiff.onRepositoryChanged(() => {
         setLocalChangesDetected(true);
+      }),
+    [],
+  );
+
+  useEffect(
+    () =>
+      window.codiff.onWalkthroughProgress((progress) => {
+        setWalkthroughProgress((current) =>
+          current.phase === progress.phase
+            ? current
+            : {
+                phase: progress.phase,
+                responseLabelIndex: current.responseLabelIndex,
+                stageRevision: current.stageRevision + 1,
+              },
+        );
       }),
     [],
   );
@@ -1654,6 +1687,11 @@ export default function App() {
   // Results are dropped if the reviewer switched sources while it was running.
   const loadNarrativeWalkthrough = useCallback((source: ReviewSource) => {
     const sourceKey = getSourceKey(source);
+    setWalkthroughProgress((current) => ({
+      phase: null,
+      responseLabelIndex: nextWalkthroughResponseLabelIndex(current.responseLabelIndex),
+      stageRevision: current.stageRevision + 1,
+    }));
     setWalkthroughLoading(true);
     setWalkthroughError(null);
     window.codiff
@@ -2438,7 +2476,15 @@ export default function App() {
   if (!state) {
     return (
       <main className={`loading italic${launchOptions.walkthrough ? ' codex' : ' pulse'}`}>
-        {launchOptions.walkthrough ? 'Generating walkthrough…' : 'Thinking…'}
+        {launchOptions.walkthrough ? (
+          <WalkthroughProgress
+            phase={walkthroughProgress.phase}
+            responseLabelIndex={walkthroughProgress.responseLabelIndex}
+            stageRevision={walkthroughProgress.stageRevision}
+          />
+        ) : (
+          'Thinking…'
+        )}
       </main>
     );
   }
@@ -2684,6 +2730,7 @@ export default function App() {
           walkthroughError={walkthroughError}
           walkthroughLoading={walkthroughLoading}
           walkthroughOutdatedPaths={walkthroughOutdatedPaths}
+          walkthroughProgress={walkthroughProgress}
           walkthroughUnread={walkthroughUnread}
         />
       </aside>

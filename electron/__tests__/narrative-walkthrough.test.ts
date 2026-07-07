@@ -9,6 +9,7 @@ const {
   narrativeWalkthroughResponseSchema,
   narrativeWalkthroughSchema,
   normalizeNarrativeWalkthrough,
+  readNarrativeWalkthrough,
 } = require('../narrative-walkthrough.cjs') as {
   buildNarrativeWalkthroughPrompt: (
     state: any,
@@ -37,6 +38,13 @@ const {
     }>,
     facts?: Record<string, unknown>,
   ) => any;
+  readNarrativeWalkthrough: (
+    state: any,
+    agent: any,
+    agentOptions: any,
+    context?: unknown,
+    customPrompt?: string,
+  ) => Promise<any>;
 };
 
 const addedPatch = (count: number) =>
@@ -84,6 +92,37 @@ const files = [
     status: 'modified',
   },
 ];
+
+test('reports only the long-running walkthrough generation phases', async () => {
+  const phases: Array<string> = [];
+  const state = {
+    branch: 'main',
+    files,
+    generatedAt: 1,
+    root: '/repo',
+    source: { type: 'working-tree' },
+  };
+  const agent = {
+    defaultTimeoutMs: 90_000,
+    id: 'codex',
+    isNotFoundError: () => false,
+    label: 'Codex',
+    run: async () => JSON.stringify(baseInput()),
+  };
+
+  await expect(
+    readNarrativeWalkthrough(
+      state,
+      agent,
+      {
+        onProgress: (phase: string) => phases.push(phase),
+      },
+      null,
+    ),
+  ).resolves.toMatchObject({ status: 'ready' });
+
+  expect(phases).toEqual(['agent-generation', 'response-received']);
+});
 
 const baseInput = () => ({
   chapters: [

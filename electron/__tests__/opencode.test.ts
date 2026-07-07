@@ -40,6 +40,7 @@ const {
       fallbackModel?: string;
       model?: string;
       onModelFallback?: (fallbackModel: string, originalModel: string) => void;
+      onProgress?: (phase: string) => void;
     },
   ) => Promise<string>;
 };
@@ -175,6 +176,203 @@ process.stdin.on('end', () => {
     expect(stdin).toContain('prompt');
     expect(stdin).toContain('Follow this JSON Schema exactly');
     expect(stdin).toContain('"required":["version"]');
+  } finally {
+    if (previousOpenCodePath == null) {
+      delete process.env.CODIFF_OPENCODE_PATH;
+    } else {
+      process.env.CODIFF_OPENCODE_PATH = previousOpenCodePath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('streams semantic progress from the OpenCode event server', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-opencode-progress-'));
+  const fakeOpenCodePath = join(directory, 'opencode');
+  const argsPath = join(directory, 'args.txt');
+  const requestPath = join(directory, 'request.json');
+  const previousOpenCodePath = process.env.CODIFF_OPENCODE_PATH;
+
+  try {
+    await writeFile(
+      fakeOpenCodePath,
+      `#!/usr/bin/env node
+const { appendFileSync, writeFileSync } = require('node:fs');
+const http = require('node:http');
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args) + '\\n');
+if (args[0] !== 'serve') process.exit(2);
+const port = Number(args.find((arg) => arg.startsWith('--port='))?.slice(7));
+const sessionID = 'session-1';
+let events;
+const readBody = (request) => new Promise((resolve) => {
+  let body = '';
+  request.on('data', (chunk) => { body += chunk; });
+  request.on('end', () => resolve(body));
+});
+const sendEvent = (event) => {
+  events.write('data: ' + JSON.stringify({ payload: event }) + '\\n\\n');
+};
+const server = http.createServer(async (request, response) => {
+  const url = new URL(request.url, 'http://127.0.0.1');
+  if (request.method === 'POST' && url.pathname === '/session') {
+    const body = JSON.parse(await readBody(request));
+    writeFileSync(${JSON.stringify(requestPath)}, JSON.stringify({ session: body }));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ id: sessionID }));
+    return;
+  }
+  if (request.method === 'GET' && url.pathname === '/event') {
+    events = response;
+    response.writeHead(200, {
+      'cache-control': 'no-cache',
+      'content-type': 'text/event-stream',
+    });
+    response.flushHeaders();
+    return;
+  }
+  if (request.method === 'POST' && url.pathname === '/session/' + sessionID + '/message') {
+    const body = JSON.parse(await readBody(request));
+    writeFileSync(
+      ${JSON.stringify(requestPath)},
+      JSON.stringify({ ...JSON.parse(require('node:fs').readFileSync(${JSON.stringify(requestPath)})), prompt: body }),
+    );
+    sendEvent({
+      properties: {
+        part: { messageID: 'user-1', type: 'text' },
+        sessionID,
+      },
+      type: 'message.part.updated',
+    });
+    sendEvent({
+      properties: {
+        info: { id: 'assistant-1', role: 'assistant' },
+        sessionID,
+      },
+      type: 'message.updated',
+    });
+    sendEvent({
+      properties: {
+        part: { messageID: 'assistant-1', type: 'step-start' },
+        sessionID,
+      },
+      type: 'message.part.updated',
+    });
+    sendEvent({
+      properties: {
+        delta: '{"version":1}',
+        field: 'text',
+        messageID: 'assistant-1',
+        partID: 'answer',
+        sessionID,
+      },
+      type: 'message.part.delta',
+    });
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({
+      info: { role: 'assistant' },
+      parts: [{ id: 'answer', text: '{"version":1}', type: 'text' }],
+    }));
+    return;
+  }
+  if (request.method === 'DELETE' && url.pathname === '/session/' + sessionID) {
+    response.end('{}');
+    return;
+  }
+  response.statusCode = 404;
+  response.end();
+});
+server.listen(port, '127.0.0.1', () => {
+  process.stdout.write('opencode server listening on http://127.0.0.1:' + port + '\\n');
+});
+process.on('SIGTERM', () => server.close(() => process.exit(0)));
+`,
+    );
+    await chmod(fakeOpenCodePath, 0o755);
+    process.env.CODIFF_OPENCODE_PATH = fakeOpenCodePath;
+    const phases: Array<string> = [];
+
+    await expect(
+      runOpenCode(
+        directory,
+        'prompt',
+        { required: ['version'], type: 'object' },
+        undefined,
+        undefined,
+        {
+          onProgress: (phase) => phases.push(phase),
+        },
+      ),
+    ).resolves.toBe('{"version":1}');
+
+    expect(phases).toEqual(['agent-generation', 'response-received']);
+    const calls = (await readFile(argsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(calls).toEqual([expect.arrayContaining(['serve', '--pure', '--hostname=127.0.0.1'])]);
+    const request = JSON.parse(await readFile(requestPath, 'utf8'));
+    expect(request.session.permission).toEqual([{ action: 'deny', pattern: '*', permission: '*' }]);
+    expect(request.prompt.parts[0].text).toContain('Follow this JSON Schema exactly');
+    expect(request.prompt.tools).toEqual({});
+  } finally {
+    if (previousOpenCodePath == null) {
+      delete process.env.CODIFF_OPENCODE_PATH;
+    } else {
+      process.env.CODIFF_OPENCODE_PATH = previousOpenCodePath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('falls back to OpenCode CLI JSON mode when event streaming is unavailable', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-opencode-progress-fallback-'));
+  const fakeOpenCodePath = join(directory, 'opencode');
+  const argsPath = join(directory, 'args.txt');
+  const previousOpenCodePath = process.env.CODIFF_OPENCODE_PATH;
+
+  try {
+    await writeFile(
+      fakeOpenCodePath,
+      `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args) + '\\n');
+if (args[0] === 'serve') {
+  process.stderr.write('unknown command: serve');
+  process.exit(1);
+}
+process.stdin.resume();
+process.stdin.on('end', () => {
+  process.stdout.write(JSON.stringify({
+    type: 'text',
+    part: { id: 'answer', text: '{"version":1}' },
+  }) + '\\n');
+});
+`,
+    );
+    await chmod(fakeOpenCodePath, 0o755);
+    process.env.CODIFF_OPENCODE_PATH = fakeOpenCodePath;
+
+    await expect(
+      runOpenCode(
+        directory,
+        'prompt',
+        { required: ['version'], type: 'object' },
+        undefined,
+        undefined,
+        {
+          onProgress: () => {},
+        },
+      ),
+    ).resolves.toBe('{"version":1}');
+
+    const calls = (await readFile(argsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(calls[0][0]).toBe('serve');
+    expect(calls[1].slice(0, 3)).toEqual(['run', '--format', 'json']);
   } finally {
     if (previousOpenCodePath == null) {
       delete process.env.CODIFF_OPENCODE_PATH;
