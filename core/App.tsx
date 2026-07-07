@@ -1491,6 +1491,11 @@ export default function App() {
     [],
   );
 
+  const subscribeToCommitOutput = useCallback(
+    (callback: (chunk: string) => void) => window.codiff.onWalkthroughCommitOutput(callback),
+    [],
+  );
+
   // Ask the connected agent to rewrite the commit message for the reviewer's
   // current file selection (used when files are dropped from the staging set).
   const updateWalkthroughCommitMessage = useCallback(
@@ -2692,6 +2697,7 @@ export default function App() {
             draft={narrativeNavigation}
             model={plainCommitModel}
             onCommit={commitWalkthrough}
+            onCommitOutput={subscribeToCommitOutput}
             onUpdateMessage={updateWalkthroughCommitMessage}
           />
         ) : showNarrativeWalkthrough && narrativeWalkthrough ? (
@@ -2701,6 +2707,7 @@ export default function App() {
             navigation={narrativeNavigation}
             onActiveReviewTargetChange={updateActiveWalkthroughReviewTarget}
             onCommit={commitWalkthrough}
+            onCommitOutput={subscribeToCommitOutput}
             onRegenerateWalkthrough={regenerateWalkthrough}
             onShareWalkthrough={enabledShareWalkthrough}
             onUpdateCommitMessage={updateWalkthroughCommitMessage}

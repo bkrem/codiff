@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { init as initGhostty, Terminal } from 'ghostty-web';
+import { useEffect, useRef, useState } from 'react';
 import {
   changeTypeLabel,
   type CommitFile,
@@ -11,13 +12,15 @@ import type {
   WalkthroughCommitRequest,
   WalkthroughCommitResult,
 } from '../../../types.ts';
-import { ArrowsClockwise, Check, GitBranch } from './icons.tsx';
+import { ArrowsClockwise, Check, GitBranch, X } from './icons.tsx';
 import { ChapterIcon, WalkthroughLineCount } from './parts.tsx';
 
 export type CommitHandler = (request: WalkthroughCommitRequest) => Promise<WalkthroughCommitResult>;
 export type CommitMessageHandler = (
   request: WalkthroughCommitMessageRequest,
 ) => Promise<WalkthroughCommitMessageResult>;
+/** Subscribe to live commit output (pre-commit hook logs); returns unsubscribe. */
+export type CommitOutputSubscriber = (callback: (chunk: string) => void) => () => void;
 
 export type CommitDraftState = {
   commitBody: string;
@@ -30,6 +33,118 @@ export type CommitDraftState = {
 };
 
 type CheckState = 'on' | 'off' | 'partial';
+
+// Cols must match the PTY spawned in electron/walkthrough-commit.cjs so hook
+// output wraps where the PTY wrapped it.
+const TERMINAL_COLS = 80;
+const TERMINAL_ROWS = 12;
+
+// xterm.js's default ANSI palette (Tango); ghostty-web's own defaults differ.
+const ANSI_THEME = {
+  black: '#2e3436',
+  blue: '#3465a4',
+  brightBlack: '#555753',
+  brightBlue: '#729fcf',
+  brightCyan: '#34e2e2',
+  brightGreen: '#8ae234',
+  brightMagenta: '#ad7fa8',
+  brightRed: '#ef2929',
+  brightWhite: '#eeeeec',
+  brightYellow: '#fce94f',
+  cyan: '#06989a',
+  green: '#4e9a06',
+  magenta: '#75507b',
+  red: '#cc0000',
+  white: '#d3d7cf',
+  yellow: '#c4a000',
+};
+
+/**
+ * ghostty-web clears rows by painting the theme background, so a transparent
+ * background leaves stale glyphs behind; give it the color actually painted
+ * behind the terminal instead.
+ */
+function resolveBackdrop(element: HTMLElement): string {
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const color = getComputedStyle(node).backgroundColor;
+    if (color !== 'transparent' && !color.startsWith('rgba')) {
+      return color;
+    }
+  }
+  return '#00000000';
+}
+
+/**
+ * Read-only ghostty-web terminal that replays the streamed commit output, so
+ * ANSI colors and cursor movement from pre-commit hooks render as they would
+ * in a real shell.
+ */
+function CommitLogTerminal({ output }: { output: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [terminal, setTerminal] = useState<Terminal | null>(null);
+  const writtenRef = useRef(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+    let disposed = false;
+    let instance: Terminal | null = null;
+    // ghostty-web loads its WASM module asynchronously; output streamed in the
+    // meantime is replayed by the write effect once the terminal exists.
+    void initGhostty().then(() => {
+      if (disposed) {
+        return;
+      }
+      const style = getComputedStyle(container);
+      instance = new Terminal({
+        cols: TERMINAL_COLS,
+        // Hook runners pipe their children, so some lines arrive with bare `\n`
+        // and would stairstep without this.
+        convertEol: true,
+        disableStdin: true,
+        fontFamily: style.fontFamily,
+        fontSize: 12,
+        rows: TERMINAL_ROWS,
+        theme: {
+          ...ANSI_THEME,
+          background: resolveBackdrop(container),
+          cursor: '#00000000',
+          foreground: style.color,
+        },
+      });
+      instance.open(container);
+      // open() marks the container contenteditable and focusable for input;
+      // this terminal is read-only and the attributes draw a caret on click.
+      container.removeAttribute('contenteditable');
+      container.removeAttribute('tabindex');
+      // A fresh terminal can inherit rows from a previously disposed one:
+      // dispose() never frees the WASM-side terminal, and new instances get
+      // recycled row memory from the shared WASM module. Erase everything.
+      instance.write('\u001B[2J\u001B[3J\u001B[H');
+      writtenRef.current = 0;
+      setTerminal(instance);
+    });
+    return () => {
+      disposed = true;
+      instance?.dispose();
+      setTerminal(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Output only grows within one commit attempt; each attempt remounts this
+    // component (keyed by the parent), so a fresh terminal starts empty.
+    if (!terminal || output.length <= writtenRef.current) {
+      return;
+    }
+    terminal.write(output.slice(writtenRef.current));
+    writtenRef.current = output.length;
+  }, [terminal, output]);
+
+  return <div className="wt-commit-log-term" ref={containerRef} />;
+}
 
 function CommitCheck({ state }: { state: CheckState }) {
   if (state === 'partial') {
@@ -213,12 +328,14 @@ export function CommitView({
   draft,
   model,
   onCommit,
+  onCommitOutput,
   onUpdateMessage,
 }: {
   branch: string | null;
   draft: CommitDraftState;
   model: CommitModel;
   onCommit: CommitHandler;
+  onCommitOutput?: CommitOutputSubscriber;
   onUpdateMessage: CommitMessageHandler;
 }) {
   const selected = draft.commitSelected;
@@ -232,6 +349,9 @@ export function CommitView({
 
   const [status, setStatus] = useState<'idle' | 'submitting'>('idle');
   const [result, setResult] = useState<WalkthroughCommitResult | null>(null);
+  const [output, setOutput] = useState('');
+  // Remounts the log terminal on each commit attempt so it starts empty.
+  const [attempt, setAttempt] = useState(0);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [bodyFlash, setBodyFlash] = useState(false);
@@ -275,14 +395,29 @@ export function CommitView({
     }
     setStatus('submitting');
     setResult(null);
-    const next = await onCommit({
-      body: draft.commitBody.trim(),
-      paths: selectedFiles.map((file) => file.path),
-      subject: subject.trim(),
-    });
-    setResult(next);
-    setStatus('idle');
+    setOutput('');
+    setAttempt((current) => current + 1);
+    const unsubscribe = onCommitOutput?.((chunk) => setOutput((current) => current + chunk));
+    try {
+      const next = await onCommit({
+        body: draft.commitBody.trim(),
+        paths: selectedFiles.map((file) => file.path),
+        subject: subject.trim(),
+      });
+      setResult(next);
+    } finally {
+      unsubscribe?.();
+      setStatus('idle');
+    }
   };
+
+  const dismissFailure = () => {
+    setResult((current) => (current?.status === 'failed' ? null : current));
+    setOutput('');
+  };
+
+  const failed = result?.status === 'failed';
+  const showLog = status === 'submitting' || (failed && output.length > 0);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -330,9 +465,6 @@ export function CommitView({
               </span>
             </div>
           ) : null}
-          {result?.status === 'failed' ? (
-            <div className="wt-commit-error">{result.reason}</div>
-          ) : null}
           <SubjectInput onChange={draft.setCommitSubject} value={draft.commitSubject} />
           <MessageDraft
             canUpdate={canUpdate}
@@ -363,24 +495,70 @@ export function CommitView({
         </div>
       </div>
       <div className="wt-commit-foot">
-        <span className="wt-commit-foot-actions">
-          <button
-            className="codiff-open-button wt-commit-btn"
-            disabled={!canCommit}
-            onClick={submit}
-            type="button"
-          >
-            <GitBranch size={16} />
-            <span>
-              {committed ? 'Committed' : status === 'submitting' ? 'Committing…' : 'Commit'}
-            </span>
-            {!allSelected && !committed ? (
-              <span className="lc">
-                {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'}
+        {showLog ? (
+          <div className={`wt-commit-log${failed ? ' failed' : ''}`}>
+            <div className="wt-commit-log-head">
+              <span className="wt-commit-log-title">
+                {failed ? (
+                  'Commit output'
+                ) : (
+                  <>
+                    <span className="wt-commit-log-pulse" />
+                    Committing…
+                  </>
+                )}
               </span>
-            ) : null}
-          </button>
-        </span>
+              {failed ? (
+                <button
+                  aria-label="Dismiss commit error"
+                  className="wt-commit-dismiss"
+                  onClick={dismissFailure}
+                  type="button"
+                >
+                  <X size={14} weight="bold" />
+                </button>
+              ) : null}
+            </div>
+            <CommitLogTerminal key={attempt} output={output} />
+          </div>
+        ) : null}
+        <div className="wt-commit-foot-row">
+          {result?.status === 'failed' ? (
+            <span className="wt-commit-foot-error">
+              <span className="wt-commit-error-text">
+                {output.trim() ? 'The commit failed — see the output above.' : result.reason}
+              </span>
+              {!showLog ? (
+                <button
+                  aria-label="Dismiss commit error"
+                  className="wt-commit-dismiss"
+                  onClick={dismissFailure}
+                  type="button"
+                >
+                  <X size={14} weight="bold" />
+                </button>
+              ) : null}
+            </span>
+          ) : null}
+          <span className="wt-commit-foot-actions">
+            <button
+              className="codiff-open-button wt-commit-btn"
+              disabled={!canCommit}
+              onClick={submit}
+              type="button"
+            >
+              <GitBranch size={16} />
+              <span>
+                {committed ? 'Committed' : status === 'submitting' ? 'Committing…' : 'Commit'}
+              </span>
+              {!allSelected && !committed ? (
+                <span className="lc">
+                  {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'}
+                </span>
+              ) : null}
+            </button>
+          </span>
+        </div>
       </div>
     </div>
   );

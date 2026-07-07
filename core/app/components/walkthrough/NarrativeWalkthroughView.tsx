@@ -17,7 +17,12 @@ import {
 } from '../../../lib/narrative-walkthrough.ts';
 import type { ChangedFile, NarrativeWalkthrough, WalkthroughHunkGroup } from '../../../types.ts';
 import type { ReviewDiffBlock } from '../ReviewCodeView.tsx';
-import { CommitView, type CommitHandler, type CommitMessageHandler } from './CommitView.tsx';
+import {
+  CommitView,
+  type CommitHandler,
+  type CommitMessageHandler,
+  type CommitOutputSubscriber,
+} from './CommitView.tsx';
 import {
   ArrowLeft,
   ArrowRight,
@@ -535,6 +540,7 @@ export function NarrativeWalkthroughView({
   navigation,
   onActiveReviewTargetChange,
   onCommit,
+  onCommitOutput,
   onRegenerateWalkthrough,
   onShareWalkthrough,
   onUpdateCommitMessage,
@@ -550,6 +556,7 @@ export function NarrativeWalkthroughView({
   navigation: NarrativeNavigation;
   onActiveReviewTargetChange: (target: WalkthroughReviewTarget | null) => void;
   onCommit: CommitHandler;
+  onCommitOutput?: CommitOutputSubscriber;
   onRegenerateWalkthrough?: () => void;
   onShareWalkthrough?: () => void;
   onUpdateCommitMessage: CommitMessageHandler;
@@ -745,6 +752,7 @@ export function NarrativeWalkthroughView({
           draft={navigation}
           model={buildCommitModel(walkthroughView, files)}
           onCommit={onCommit}
+          onCommitOutput={onCommitOutput}
           onUpdateMessage={onUpdateCommitMessage}
         />
       ) : walkthroughView.sequence.length > 0 ? (

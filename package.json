@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
+    "node-pty": "^1.1.0",
     "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
@@ -69,6 +70,7 @@
     "eslint-plugin-no-only-tests": "^3.4.0",
     "eslint-plugin-perfectionist": "^5.9.1",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "ghostty-web": "^0.4.0",
     "jsdom": "^29.1.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
