@@ -38,6 +38,9 @@ for (const evalCase of await readCases()) {
   }
 
   const successful = attempts.filter((attempt) => attempt.meta.exitStatus === 'ready');
+  const stateTimes = attempts
+    .map((attempt) => attempt.meta.stateMs)
+    .filter((value) => Number.isFinite(value) && value > 0);
   rows.push({
     attempts: attempts.length,
     case: evalCase.id,
@@ -55,28 +58,33 @@ for (const evalCase of await readCases()) {
     ),
     promptChars: median(successful.map((attempt) => attempt.meta.promptChars)),
     quality: average(attempts.map((attempt) => attempt.judge?.total).filter(Number.isFinite)),
+    stateMs: stateTimes.length > 0 ? median(stateTimes) : null,
     successRate: successful.length / attempts.length,
     transport: successful[0]?.meta.transport ?? 'unknown',
   });
 }
 
+const stateTimes = rows
+  .map((row) => row.stateMs)
+  .filter((value) => Number.isFinite(value) && value > 0);
 const summary = {
   averageQuality: average(rows.map((row) => row.quality).filter(Number.isFinite)),
   averageSuccessRate: average(rows.map((row) => row.successRate)),
   cases: rows.length,
   medianFirstResponseMs: median(rows.map((row) => row.firstResponseMs)),
   medianGenerationMs: median(rows.map((row) => row.generationMs)),
+  medianStateMs: stateTimes.length > 0 ? median(stateTimes) : null,
 };
 await writeJson(join(runDir, 'summary.json'), { rows, summary });
 
 const lines = [
   `# Walkthrough eval: ${label}`,
   '',
-  '| Case | Attempts | Success | Hunks | Prompt | First response | Generation | Input | Output | Main coverage | Quality | Transport |',
-  '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+  '| Case | Attempts | Success | Hunks | State | Prompt | First response | Generation | Input | Output | Main coverage | Quality | Transport |',
+  '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
   ...rows.map(
     (row) =>
-      `| ${row.case} | ${row.attempts} | ${(row.successRate * 100).toFixed(0)}% | ${row.hunkCount} | ${Math.round(row.promptChars / 1000)}k | ${(row.firstResponseMs / 1000).toFixed(2)}s | ${(row.generationMs / 1000).toFixed(2)}s | ${Math.round(row.inputTokens)} | ${Math.round(row.outputTokens)} | ${(row.mainCoverage * 100).toFixed(0)}% | ${row.quality.toFixed(1)}/100 | ${row.transport} |`,
+      `| ${row.case} | ${row.attempts} | ${(row.successRate * 100).toFixed(0)}% | ${row.hunkCount} | ${Number.isFinite(row.stateMs) ? `${row.stateMs.toFixed(1)}ms` : 'n/a'} | ${Math.round(row.promptChars / 1000)}k | ${(row.firstResponseMs / 1000).toFixed(2)}s | ${(row.generationMs / 1000).toFixed(2)}s | ${Math.round(row.inputTokens)} | ${Math.round(row.outputTokens)} | ${(row.mainCoverage * 100).toFixed(0)}% | ${row.quality.toFixed(1)}/100 | ${row.transport} |`,
   ),
   '',
   '## Summary',

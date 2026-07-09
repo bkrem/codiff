@@ -7,6 +7,10 @@ const {
   readComparisonState,
 } = require('./comparison.cjs');
 const { readCommitMetadataForCommit } = require('./commit-metadata.cjs');
+const {
+  applyGeneratedAttributeStates,
+  readGeneratedAttributeStates,
+} = require('../generated-files.cjs');
 
 /**
  * @typedef {import('../../core/types.ts').DiffImageContentResult} DiffImageContentResult
@@ -306,9 +310,23 @@ const readResolvedComparisonState = (launchPath, comparison) =>
     status: comparison.status,
   });
 
+/** @param {ResolvedComparison} comparison */
+const readComparisonGeneratedAttributeStates = (comparison) =>
+  readGeneratedAttributeStates(
+    comparison.repoRoot,
+    comparison.status.map((file) => file.path),
+    comparison.newRef,
+  );
+
 /** @param {string} launchPath @param {ComparisonSource} source @returns {Promise<RepositoryState>} */
-const readComparisonSourceState = async (launchPath, source) =>
-  readResolvedComparisonState(launchPath, await readResolvedComparison(launchPath, source));
+const readComparisonSourceState = async (launchPath, source) => {
+  const comparison = await readResolvedComparison(launchPath, source);
+  const [state, generatedAttributeStates] = await Promise.all([
+    readResolvedComparisonState(launchPath, comparison),
+    readComparisonGeneratedAttributeStates(comparison),
+  ]);
+  return applyGeneratedAttributeStates(state, generatedAttributeStates);
+};
 
 /**
  * @param {string} launchPath
@@ -362,7 +380,7 @@ const readComparisonSourceImageContent = async (launchPath, source, requestedPat
 /** @param {string} launchPath @param {string} ref @returns {Promise<RepositoryState>} */
 const readCommitState = async (launchPath, ref) => {
   const comparison = await readResolvedComparison(launchPath, { ref, type: 'commit' });
-  const [commitMetadata, state] = await Promise.all([
+  const [commitMetadata, state, generatedAttributeStates] = await Promise.all([
     readCommitMetadataForCommit(
       comparison.repoRoot,
       comparison.newRef,
@@ -370,10 +388,11 @@ const readCommitState = async (launchPath, ref) => {
       comparison.status,
     ),
     readResolvedComparisonState(launchPath, comparison),
+    readComparisonGeneratedAttributeStates(comparison),
   ]);
 
   return {
-    ...state,
+    ...applyGeneratedAttributeStates(state, generatedAttributeStates),
     commitMetadata,
   };
 };

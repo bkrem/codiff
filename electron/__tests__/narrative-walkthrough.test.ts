@@ -534,6 +534,33 @@ test('repository digest collapses generated files to one synthetic hunk', () => 
   expect(prompt).not.toContain('"id":"h2"');
 });
 
+test('repository digest honors generated metadata that disables path heuristics', () => {
+  const prompt = buildNarrativeWalkthroughPrompt({
+    branch: 'main',
+    files: [
+      {
+        generated: false,
+        path: 'pnpm-lock.yaml',
+        sections: [
+          {
+            id: 'pnpm-lock.yaml:staged',
+            kind: 'staged',
+            patch: manyHunkPatch,
+          },
+        ],
+        status: 'modified',
+      },
+    ],
+    generatedAt: 1,
+    root: '/repo',
+    source: { type: 'working-tree' },
+  });
+
+  expect(prompt).not.toContain('"generated":true');
+  expect(prompt).toContain('"kind":"patch"');
+  expect(prompt).toContain('"id":"h2"');
+});
+
 test('repository digest exposes synthetic hunk ids for non-text sections', () => {
   const prompt = buildNarrativeWalkthroughPrompt({
     branch: 'main',

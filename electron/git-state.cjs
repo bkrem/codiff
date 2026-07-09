@@ -79,8 +79,16 @@ const readRepositoryState = async (launchPath, source = { type: 'working-tree' }
                 eagerContents: false,
                 showWhitespace: options.showWhitespace,
               });
-  const branch = (await gitOrEmpty(state.root, ['symbolic-ref', '--short', 'HEAD'])).trim() || null;
-  return annotateGeneratedFiles({ ...state, branch });
+  const comparisonState =
+    source.type === 'commit' ||
+    source.type === 'range' ||
+    source.type === 'branch' ||
+    source.type === 'branch-diff';
+  const [branch, annotatedState] = await Promise.all([
+    gitOrEmpty(state.root, ['symbolic-ref', '--short', 'HEAD']),
+    comparisonState ? state : annotateGeneratedFiles(state),
+  ]);
+  return { ...annotatedState, branch: branch.trim() || null };
 };
 
 /**

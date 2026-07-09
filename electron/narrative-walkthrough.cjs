@@ -720,7 +720,7 @@ Grouping contract:
 - Do not group a whole large file into one stop when its hunks implement distinct workflows, state transitions, or submission paths.
 - Put hunkIds in the exact display order you want Codiff to render. Out-of-line and cross-file order is allowed when it improves reviewer comprehension.
 - Do not provide added/deleted counts, status, oldPath, section ids, display labels, path, repo, source, generatedAt, agent, or meta; Codiff computes those.
-- Leave secondary, mechanical, docs-only, generated, styling, fixture, and repeated-pattern hunks out of chapters[]. Codiff automatically places every unreferenced hunk in support. Use reason "Generated files" for generated-only support items so they render together.
+- Leave secondary, mechanical, docs-only, generated, styling, fixture, and repeated-pattern hunks out of chapters[]. Codiff automatically places every unreferenced hunk in support.
 - For working-tree sources, include commit.title and commit.body by default unless there are no commit-worthy files. Put the subject line in commit.title, not as the first line of commit.body.
 `;
 };

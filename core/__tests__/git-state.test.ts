@@ -31,11 +31,11 @@ type PullRequestFileContent = {
 };
 
 type GeneratedFilesModule = {
-  readGeneratedAttributePaths: (
+  readGeneratedAttributeStates: (
     repoRoot: string,
     paths: ReadonlyArray<string>,
     source?: string,
-  ) => Promise<ReadonlySet<string>>;
+  ) => Promise<ReadonlyMap<string, boolean>>;
 };
 
 type GitStateModule = {
@@ -125,7 +125,7 @@ type GitStateModule = {
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
-const { readGeneratedAttributePaths } =
+const { readGeneratedAttributeStates } =
   require('../../electron/generated-files.cjs') as GeneratedFilesModule;
 const {
   collectResolvedReviewCommentIds,
@@ -193,20 +193,22 @@ test('readRepositoryState marks generated files from gitattributes and path heur
     await writeRepoFile(
       repo,
       '.gitattributes',
-      '*.gen.yaml gitlab-generated\n*.generated.txt linguist-generated\nignored.txt -linguist-generated\n',
+      '*.gen.yaml gitlab-generated\n*.generated.txt linguist-generated\nignored.txt -linguist-generated\npnpm-lock.yaml linguist-generated=false\nsrc/__generated__/** -gitlab-generated\n',
     );
     await writeRepoFile(repo, 'service.gen.yaml', 'generated\n');
     await writeRepoFile(repo, 'schema.generated.txt', 'generated\n');
     await writeRepoFile(repo, 'ignored.txt', 'source\n');
     await writeRepoFile(repo, 'pnpm-lock.yaml', 'lockfileVersion: 9\n');
+    await writeRepoFile(repo, 'src/__generated__/api.ts', 'export const api = 1;\n');
 
     const state = await readRepositoryState(repo);
     const generatedByPath = new Map(state.files.map((file) => [file.path, file.generated]));
 
     expect(generatedByPath.get('service.gen.yaml')).toBe(true);
     expect(generatedByPath.get('schema.generated.txt')).toBe(true);
-    expect(generatedByPath.get('pnpm-lock.yaml')).toBe(true);
-    expect(generatedByPath.get('ignored.txt')).toBeUndefined();
+    expect(generatedByPath.get('pnpm-lock.yaml')).toBe(false);
+    expect(generatedByPath.get('src/__generated__/api.ts')).toBe(false);
+    expect(generatedByPath.get('ignored.txt')).toBe(false);
   });
 });
 
@@ -226,12 +228,21 @@ test('commit reviews evaluate generated attributes from the reviewed commit', as
 
 test('historical generated attributes fall back to a temporary index without --source', async () => {
   await withRepo(async (repo) => {
-    await writeRepoFile(repo, '.gitattributes', '*.api.ts linguist-generated\n');
+    await writeRepoFile(
+      repo,
+      '.gitattributes',
+      '*.api.ts linguist-generated\npnpm-lock.yaml linguist-generated=false\n',
+    );
     await writeRepoFile(repo, 'client.api.ts', 'export const client = 1;\n');
+    await writeRepoFile(repo, 'pnpm-lock.yaml', 'lockfileVersion: 9\n');
     await commitAll(repo, 'generated client');
     const commit = (await git(repo, ['rev-parse', 'HEAD'])).trim();
 
-    await writeRepoFile(repo, '.gitattributes', '*.api.ts -linguist-generated\n');
+    await writeRepoFile(
+      repo,
+      '.gitattributes',
+      '*.api.ts -linguist-generated\npnpm-lock.yaml linguist-generated\n',
+    );
     const wrapperDirectory = await mkdtemp(join(tmpdir(), 'codiff-old-git-'));
     const wrapperPath = join(wrapperDirectory, 'git');
     await writeFile(
@@ -255,8 +266,17 @@ exec git "$@"
     process.env.CODIFF_TEST_ORIGINAL_PATH = originalPath ?? '';
     process.env.PATH = `${wrapperDirectory}:${originalPath ?? ''}`;
     try {
-      const generatedPaths = await readGeneratedAttributePaths(repo, ['client.api.ts'], commit);
-      expect(generatedPaths).toEqual(new Set(['client.api.ts']));
+      const generatedStates = await readGeneratedAttributeStates(
+        repo,
+        ['client.api.ts', 'pnpm-lock.yaml'],
+        commit,
+      );
+      expect(generatedStates).toEqual(
+        new Map([
+          ['client.api.ts', true],
+          ['pnpm-lock.yaml', false],
+        ]),
+      );
     } finally {
       if (originalPath == null) {
         delete process.env.PATH;

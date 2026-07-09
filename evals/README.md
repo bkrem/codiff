@@ -30,10 +30,13 @@ node evals/report.mjs low-effort
 node evals/compare.mjs baseline low-effort --enforce
 ```
 
+The enforced comparison rejects a quality drop greater than 10% and a median repository-state
+regression greater than 5% with a 3ms noise floor.
+
 Use `--case small` to run one case. The model defaults to the current Codiff
 `openAIModel` setting and can be overridden with `--model`.
 
 Generated artifacts stay under ignored `evals/runs/<label>/`. Each attempt contains the
 prompt, raw response, normalized walkthrough, timings, phase events, usage, deterministic
-metrics, and judge output. `compare.mjs --enforce` fails when aggregate judged quality is
-more than 10% below the baseline.
+metrics, and judge output. When the baseline includes repository-state timing,
+`compare.mjs --enforce` also fails if the candidate omits it.

@@ -82,7 +82,7 @@ const isGeneratedWalkthroughPath = (path) => {
 
 /** @param {{generated?: boolean; path: string}} file */
 const isGeneratedWalkthroughFile = (file) =>
-  file.generated === true || isGeneratedWalkthroughPath(file.path);
+  file.generated ?? isGeneratedWalkthroughPath(file.path);
 
 /** @param {string} path */
 const getGeneratedWalkthroughSummary = (path) => {

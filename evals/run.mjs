@@ -17,7 +17,7 @@ import {
 const require = createRequire(import.meta.url);
 const { getAgent } = require('../electron/agent.cjs');
 const { readConfig } = require('../electron/config.cjs');
-const { readCommitState } = require('../electron/git-state.cjs');
+const { readRepositoryState } = require('../electron/git-state.cjs');
 const {
   buildNarrativeWalkthroughPrompt,
   readNarrativeWalkthrough,
@@ -73,7 +73,10 @@ for (const evalCase of cases) {
     await writeJson(join(attemptDir, 'case.json'), evalCase);
 
     const stateStarted = nowMs();
-    const state = await readCommitState(root, evalCase.commit);
+    const state = await readRepositoryState(root, {
+      ref: evalCase.commit,
+      type: 'commit',
+    });
     const stateMs = roundMs(nowMs() - stateStarted);
     const promptStarted = nowMs();
     const expectedPrompt = buildNarrativeWalkthroughPrompt(state, null, 'Codex');

@@ -172,6 +172,25 @@ test('generated files are collapsed by default and can be explicitly expanded pe
   }
 });
 
+test('explicit generated metadata can keep generated-looking paths expanded', async () => {
+  const file = {
+    ...createChangedFile('src/__generated__/api.ts'),
+    generated: false,
+  };
+  const view = await renderReact(<ReviewCodeViewHarness files={[file]} />);
+
+  try {
+    await waitFor(() => {
+      expect(
+        view.container.querySelector('[aria-label="Collapse file"]')?.getAttribute('aria-expanded'),
+      ).toBe('true');
+      expect(view.container.querySelector('.codiff-generated-badge')).toBeNull();
+    });
+  } finally {
+    await view.cleanup();
+  }
+});
+
 test('switching edited Markdown back to a diff flushes and refreshes it first', async () => {
   const order: Array<string> = [];
   const initialFile = createLoadedMarkdownFile('# Edited\n', 'plan.md:initial');

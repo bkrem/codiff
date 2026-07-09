@@ -12,6 +12,9 @@ const GENERATED_ATTRIBUTES = ['linguist-generated', 'gitlab-generated'];
 const isGeneratedAttributeValue = (value) =>
   value !== 'unspecified' && value !== 'unset' && value !== 'false';
 
+/** @param {string} value */
+const isNotGeneratedAttributeValue = (value) => value === 'unset' || value === 'false';
+
 /** @param {import('../core/types.ts').ReviewSource} source */
 const getGeneratedAttributeSource = (source) =>
   source.type === 'commit'
@@ -25,17 +28,19 @@ const getGeneratedAttributeSource = (source) =>
           : undefined;
 
 /** @param {Buffer} output */
-const parseGeneratedAttributePaths = (output) => {
+const parseGeneratedAttributeStates = (output) => {
   const fields = output.toString('utf8').split('\0');
-  const generatedPaths = new Set();
+  const generatedStates = new Map();
   for (let index = 0; index + 2 < fields.length; index += 3) {
     const path = fields[index];
     const value = fields[index + 2];
     if (path && isGeneratedAttributeValue(value)) {
-      generatedPaths.add(path);
+      generatedStates.set(path, true);
+    } else if (path && isNotGeneratedAttributeValue(value) && generatedStates.get(path) !== true) {
+      generatedStates.set(path, false);
     }
   }
-  return generatedPaths;
+  return generatedStates;
 };
 
 /**
@@ -44,8 +49,8 @@ const parseGeneratedAttributePaths = (output) => {
  * @param {ReadonlyArray<string>} options
  * @param {NodeJS.ProcessEnv} [env]
  */
-const checkGeneratedAttributePaths = async (repoRoot, paths, options, env) =>
-  parseGeneratedAttributePaths(
+const checkGeneratedAttributeStates = async (repoRoot, paths, options, env) =>
+  parseGeneratedAttributeStates(
     await gitBufferWithInput(
       repoRoot,
       ['check-attr', ...options, '-z', '--stdin', ...GENERATED_ATTRIBUTES],
@@ -63,7 +68,7 @@ const checkGeneratedAttributePaths = async (repoRoot, paths, options, env) =>
  * @param {ReadonlyArray<string>} paths
  * @param {string} source
  */
-const readGeneratedAttributePathsFromTree = async (repoRoot, paths, source) => {
+const readGeneratedAttributeStatesFromTree = async (repoRoot, paths, source) => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'codiff-generated-files-'));
   const env = {
     ...process.env,
@@ -72,7 +77,7 @@ const readGeneratedAttributePathsFromTree = async (repoRoot, paths, source) => {
 
   try {
     await gitBufferWithInput(repoRoot, ['read-tree', source], Buffer.alloc(0), { env });
-    return await checkGeneratedAttributePaths(repoRoot, paths, ['--cached'], env);
+    return await checkGeneratedAttributeStates(repoRoot, paths, ['--cached'], env);
   } finally {
     await rm(temporaryDirectory, { force: true, recursive: true });
   }
@@ -83,49 +88,60 @@ const readGeneratedAttributePathsFromTree = async (repoRoot, paths, source) => {
  * @param {ReadonlyArray<string>} paths
  * @param {string | undefined} source
  */
-const readGeneratedAttributePaths = async (repoRoot, paths, source) => {
+const readGeneratedAttributeStates = async (repoRoot, paths, source) => {
   if (paths.length === 0) {
-    return new Set();
+    return new Map();
   }
 
   try {
-    return await checkGeneratedAttributePaths(repoRoot, paths, source ? ['--source', source] : []);
+    return await checkGeneratedAttributeStates(repoRoot, paths, source ? ['--source', source] : []);
   } catch {
     if (source) {
       try {
         // Git before 2.40 rejects `--source`; use its historical-tree fallback.
-        return await readGeneratedAttributePathsFromTree(repoRoot, paths, source);
+        return await readGeneratedAttributeStatesFromTree(repoRoot, paths, source);
       } catch {
         // Ignore invalid or unavailable historical sources.
       }
     }
-    return new Set();
+    return new Map();
   }
 };
 
+/**
+ * @param {import('../core/types.ts').RepositoryState} state
+ * @param {ReadonlyMap<string, boolean>} generatedAttributeStates
+ */
+const applyGeneratedAttributeStates = (state, generatedAttributeStates) => ({
+  ...state,
+  files: state.files.map((file) => {
+    const attributeState = generatedAttributeStates.get(file.path);
+    if (attributeState != null) {
+      return file.generated === attributeState ? file : { ...file, generated: attributeState };
+    }
+    if (file.generated != null) {
+      return file;
+    }
+    return isGeneratedWalkthroughPath(file.path) ? { ...file, generated: true } : file;
+  }),
+});
+
 /** @param {import('../core/types.ts').RepositoryState} state */
-const annotateGeneratedFiles = async (state) => {
-  const generatedAttributePaths = await readGeneratedAttributePaths(
-    state.root,
-    state.files.map((file) => file.path),
-    getGeneratedAttributeSource(state.source),
-  );
-  return {
-    ...state,
-    files: state.files.map((file) =>
-      file.generated ||
-      generatedAttributePaths.has(file.path) ||
-      isGeneratedWalkthroughPath(file.path)
-        ? { ...file, generated: true }
-        : file,
+const annotateGeneratedFiles = async (state) =>
+  applyGeneratedAttributeStates(
+    state,
+    await readGeneratedAttributeStates(
+      state.root,
+      state.files.map((file) => file.path),
+      getGeneratedAttributeSource(state.source),
     ),
-  };
-};
+  );
 
 module.exports = {
   GENERATED_ATTRIBUTES,
   annotateGeneratedFiles,
+  applyGeneratedAttributeStates,
   getGeneratedAttributeSource,
   isGeneratedAttributeValue,
-  readGeneratedAttributePaths,
+  readGeneratedAttributeStates,
 };
