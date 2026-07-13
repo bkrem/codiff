@@ -16,7 +16,7 @@ const git = async (repo: string, args: ReadonlyArray<string>) => {
   await execFileAsync('git', ['-C', repo, ...args], { encoding: 'utf8' });
 };
 
-test('prefers configured git identity and falls back to the current commit author', async () => {
+test('uses configured git identity without inferring it from the current commit author', async () => {
   const repo = await mkdtemp(join(tmpdir(), 'codiff-git-identity-'));
   try {
     await git(repo, ['init']);
@@ -42,8 +42,8 @@ test('prefers configured git identity and falls back to the current commit autho
     await git(repo, ['config', 'user.name', '']);
     await git(repo, ['config', 'user.email', '']);
     await expect(readGitIdentity(repo)).resolves.toMatchObject({
-      email: 'commit@example.com',
-      name: 'Commit Author',
+      email: '',
+      name: '',
     });
   } finally {
     await rm(repo, { force: true, recursive: true });

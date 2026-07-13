@@ -17,7 +17,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { Gravatar } from './app/components/Gravatar.tsx';
+import { Avatar } from './app/components/Avatar.tsx';
 import {
   isTerminalPullRequestMergeState,
   isPullRequestReviewActionDisabled,
@@ -283,7 +283,7 @@ export function ReadOnlyGeneralCommentCard({
 
   return (
     <article className={classes} id={getGeneralCommentElementId(comment.id)}>
-      <Gravatar fallback={displayName} size="medium" url={comment.author.avatarUrl} />
+      <Avatar fallback={displayName} size="medium" url={comment.author.avatarUrl} />
       <div className="review-comment-body source-description-body">
         <div className="review-comment-header read-only general-comment-header">
           <strong title={`@${comment.author.login}`}>{displayName}</strong>
@@ -371,7 +371,7 @@ function GeneralCommentCard({
       className={`review-comment general-comment-card${focused ? ' focused' : ''}`}
       id={getGeneralCommentElementId(comment.id)}
     >
-      <Gravatar fallback={displayName} size="medium" url={comment.author.avatarUrl} />
+      <Avatar fallback={displayName} size="medium" url={comment.author.avatarUrl} />
       <div className="review-comment-body source-description-body">
         <div
           className={`review-comment-header read-only general-comment-header${
@@ -622,7 +622,7 @@ function SidebarGeneralCommentList({
             <span className="history-entry-subject">{getCommentPreview(comment.body)}</span>
             <span className="history-entry-meta">
               <span className="history-entry-author">
-                <Gravatar fallback={displayName} size="small" url={comment.author.avatarUrl} />
+                <Avatar fallback={displayName} size="small" url={comment.author.avatarUrl} />
                 <span>{displayName}</span>
               </span>
               {comment.submittedAt ? <SubmittedAtTime submittedAt={comment.submittedAt} /> : null}
@@ -669,7 +669,7 @@ function GeneralCommentComposer({
   return (
     <section className="review-comment-thread general-comment-composer">
       <div className="review-comment">
-        <Gravatar
+        <Avatar
           fallback={gitIdentity?.name || gitIdentity?.email || 'You'}
           size="medium"
           url={gitIdentity?.gravatarUrl}

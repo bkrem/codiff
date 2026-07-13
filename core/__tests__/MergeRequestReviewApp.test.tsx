@@ -210,7 +210,7 @@ test('merge request reviews expose navigation, actions, and lazy walkthrough gen
       view.container.querySelector('.source-description-author-header')?.textContent,
     ).toContain('Review Author');
     expect(
-      view.container.querySelector('.source-description-comment > .gravatar.medium'),
+      view.container.querySelector('.source-description-comment > .avatar.medium'),
     ).not.toBeNull();
 
     const approve = view.container.querySelector<HTMLButtonElement>(
@@ -1120,6 +1120,58 @@ test('merge request reviews reconcile refreshed GitLab comments', async () => {
     await waitFor(() => {
       expect(view.container.textContent).toContain('Synced from GitLab');
     });
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test('merge request comments do not use the local identity avatar for remote authors', async () => {
+  const view = await renderReact(
+    <MergeRequestReviewApp
+      externalUrl={state.source.url}
+      gitIdentity={{
+        email: 'ada@example.com',
+        gravatarUrl: 'https://example.com/ada.png',
+        name: 'Ada Lovelace',
+      }}
+      onGenerateWalkthrough={vi.fn()}
+      onHome={vi.fn()}
+      onSubmitComment={vi.fn()}
+      onSubmitGeneralComment={vi.fn()}
+      onSubmitReview={vi.fn()}
+      onUpdateComment={vi.fn()}
+      onUpdateGeneralComment={vi.fn()}
+      state={{
+        ...state,
+        reviewComments: [
+          {
+            author: { login: 'reviewer' },
+            body: 'Remote review comment.',
+            filePath: 'src/app.ts',
+            id: 'gitlab:avatar-fallback',
+            lineNumber: 1,
+            side: 'additions',
+          },
+        ],
+      }}
+      title="Review in Codiff"
+      walkthrough={null}
+      walkthroughStatus="idle"
+    />,
+  );
+
+  try {
+    await waitFor(() => {
+      expect(view.container.textContent).toContain('Remote review comment.');
+    });
+
+    const comment = Array.from(view.container.querySelectorAll('.review-comment')).find((element) =>
+      element.textContent?.includes('Remote review comment.'),
+    );
+    const avatar = comment?.querySelector('.avatar.medium');
+
+    expect(avatar?.tagName).toBe('SPAN');
+    expect(avatar?.textContent).toBe('RE');
   } finally {
     await view.cleanup();
   }

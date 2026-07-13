@@ -440,15 +440,12 @@ const gitOrEmpty = async (repoRoot, args) => {
 
 /** @param {string} launchPath */
 const readGitIdentity = async (launchPath) => {
-  const repoRoot = (await gitOrEmpty(launchPath, ['rev-parse', '--show-toplevel'])).trim();
-  const [configuredName, configuredEmail, commitIdentity] = await Promise.all([
+  const [configuredName, configuredEmail] = await Promise.all([
     gitOrEmpty(launchPath, ['config', '--get', 'user.name']),
     gitOrEmpty(launchPath, ['config', '--get', 'user.email']),
-    repoRoot ? gitOrEmpty(repoRoot, ['log', '-1', '--format=%an%x00%ae', 'HEAD']) : '',
   ]);
-  const [commitName = '', commitEmail = ''] = commitIdentity.trim().split('\0');
-  const email = configuredEmail.trim() || commitEmail.trim();
-  const name = configuredName.trim() || commitName.trim();
+  const email = configuredEmail.trim();
+  const name = configuredName.trim();
 
   return {
     email,

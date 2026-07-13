@@ -112,7 +112,7 @@ import type {
   ReviewAuthor,
   ReviewSource,
 } from '../../types.ts';
-import { Gravatar } from './Gravatar.tsx';
+import { Avatar } from './Avatar.tsx';
 import {
   RepositoryMarkdownEditor,
   type MarkdownDocumentEditorHandle,
@@ -334,17 +334,27 @@ function CodeViewHeader({
   );
 }
 
-function ReviewAvatar({
-  author,
-  identity,
-}: {
-  author?: PullRequestExistingReviewComment['author'];
-  identity: GitIdentity | null;
-}) {
-  const label = author?.login || identity?.name || identity?.email || 'Git user';
-  const avatarUrl = author?.avatarUrl || identity?.gravatarUrl;
+const getReviewAuthorDisplayName = (author: PullRequestExistingReviewComment['author']) =>
+  author.name || author.login || 'Git user';
 
-  return <Gravatar fallback={label} size="medium" url={avatarUrl} />;
+const getGitIdentityDisplayName = (identity: GitIdentity | null) =>
+  identity?.name || identity?.email || 'Git user';
+
+function ReviewAvatar({ author }: { author: PullRequestExistingReviewComment['author'] }) {
+  return (
+    <Avatar fallback={getReviewAuthorDisplayName(author)} size="medium" url={author.avatarUrl} />
+  );
+}
+
+function IdentityReviewAvatar({ identity }: { identity: GitIdentity | null }) {
+  return (
+    <ReviewAvatar
+      author={{
+        avatarUrl: identity?.gravatarUrl,
+        login: getGitIdentityDisplayName(identity),
+      }}
+    />
+  );
 }
 
 function AgentAvatar({ agentId }: { agentId: 'codex' | 'claude' | 'opencode' | 'pi' }) {
@@ -812,7 +822,7 @@ function SourceDescriptionBody({
       }`}
     >
       {author ? (
-        <Gravatar fallback={author.displayName} size="medium" url={author.avatarUrl} />
+        <Avatar fallback={author.displayName} size="medium" url={author.avatarUrl} />
       ) : null}
       <div className="review-comment-body source-description-body">
         {author || canEditDescription || editing ? (
@@ -1587,7 +1597,11 @@ function ReviewCommentEditor({
   return (
     <Fragment>
       <div className="review-comment">
-        <ReviewAvatar author={comment.author} identity={identity} />
+        {comment.author ? (
+          <ReviewAvatar author={comment.author} />
+        ) : (
+          <IdentityReviewAvatar identity={identity} />
+        )}
         <div className="review-comment-body">
           <div
             className={`review-comment-header${
@@ -1934,12 +1948,9 @@ function ReviewCommentThreadGroup({
   return (
     <div className="review-comment-thread-group">
       {comments.map((comment) => {
-        const displayName =
-          comment.author?.name ||
-          comment.author?.login ||
-          identity?.name ||
-          identity?.email ||
-          'Git user';
+        const displayName = comment.author
+          ? getReviewAuthorDisplayName(comment.author)
+          : getGitIdentityDisplayName(identity);
 
         return (
           <ReviewCommentEditor

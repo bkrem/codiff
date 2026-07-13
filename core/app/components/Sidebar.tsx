@@ -28,7 +28,7 @@ import { fileTreeSort, statusForTree } from '../../lib/files.ts';
 import { isNativeInputTarget } from '../../lib/keyboard.ts';
 import { getShortRef, getSourceKey } from '../../lib/source.ts';
 import type { ChangedFile, HistoryEntry, NarrativeWalkthrough, ReviewSource } from '../../types.ts';
-import { Gravatar } from './Gravatar.tsx';
+import { Avatar } from './Avatar.tsx';
 import { NarrativeSidebar } from './walkthrough/NarrativeSidebar.tsx';
 import type { NarrativeNavigation } from './walkthrough/useNarrativeNavigation.ts';
 import { WalkthroughProgress } from './walkthrough/WalkthroughProgress.tsx';
@@ -715,7 +715,7 @@ function HistorySidebar({
             {hasMetadata ? (
               <span className="history-entry-meta">
                 <span className="history-entry-author">
-                  <Gravatar fallback={row.author || '?'} size="small" url={row.gravatarUrl} />
+                  <Avatar fallback={row.author || '?'} size="small" url={row.gravatarUrl} />
                   <span>{row.author}</span>
                 </span>
                 <span>{shortDate(row.committedAt || 0)}</span>

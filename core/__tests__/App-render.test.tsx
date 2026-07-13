@@ -1163,7 +1163,7 @@ test('commit messages use the shared source description presentation', async () 
       commitMetadata.author.name,
     );
     expect(
-      container.querySelector<HTMLImageElement>('.source-description-comment > .gravatar.medium')
+      container.querySelector<HTMLImageElement>('.source-description-comment > .avatar.medium')
         ?.src,
     ).toBe(historyAvatarUrl);
     expect(container.querySelector('[aria-label="Preview commit message"]')).not.toBeNull();
@@ -1202,9 +1202,8 @@ test('bodyless commits still render the author and profile image', async () => {
     });
 
     expect(
-      app.container.querySelector<HTMLImageElement>(
-        '.source-description-comment > .gravatar.medium',
-      )?.src,
+      app.container.querySelector<HTMLImageElement>('.source-description-comment > .avatar.medium')
+        ?.src,
     ).toBe(commitMetadata.author.gravatarUrl);
     expect(
       app.container.querySelector('.source-description-author-header.without-description'),
@@ -1831,6 +1830,11 @@ test('plan mode opens the Markdown editor without loading repository state', asy
       planSharing: true,
       walkthroughSharing: false,
     })),
+    getGitIdentity: vi.fn(async () => ({
+      email: 'current-user@example.com',
+      gravatarUrl: 'https://example.com/current-user.png',
+      name: 'Current User',
+    })),
     getLaunchOptions: vi.fn(async () => ({
       planFile: '/tmp/plan.md',
       planResultFile: '/tmp/result.json',
@@ -1882,6 +1886,9 @@ test('plan mode opens the Markdown editor without loading repository state', asy
         'Keep the rollout steps explicit.',
       );
     });
+    const planCommentAvatar = container.querySelector('.plan-comment-thread .avatar.medium');
+    expect(planCommentAvatar?.tagName).toBe('SPAN');
+    expect(planCommentAvatar?.textContent).toBe('RE');
     const commentTargetButton = container.querySelector<HTMLButtonElement>('.plan-comment-target');
     expect(commentTargetButton?.textContent).toBe('Heading · Execute this plan');
     expect(commentTargetButton?.disabled).toBe(false);

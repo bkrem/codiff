@@ -59,7 +59,6 @@ test('read-only comments can reveal attached targets', async () => {
         <PlanCommentCard
           active={false}
           detached={false}
-          identity={null}
           onActivate={() => {}}
           onBodyChange={() => {}}
           onDelete={() => {}}

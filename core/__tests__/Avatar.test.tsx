@@ -5,14 +5,14 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { expect, test } from 'vite-plus/test';
-import { Gravatar } from '../app/components/Gravatar.tsx';
+import { Avatar } from '../app/components/Avatar.tsx';
 
 const reactActEnvironment = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
 };
 reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
 
-test('Gravatar falls back to initials when the image fails to load', async () => {
+test('Avatar falls back to initials when the image fails to load', async () => {
   const container = document.createElement('div');
   let root: Root | null = null;
 
@@ -20,7 +20,7 @@ test('Gravatar falls back to initials when the image fails to load', async () =>
     await act(async () => {
       root = createRoot(container);
       root.render(
-        <Gravatar fallback="Christoph Nakazawa" size="medium" url="https://example.com/avatar" />,
+        <Avatar fallback="Christoph Nakazawa" size="medium" url="https://example.com/avatar" />,
       );
     });
 
@@ -38,14 +38,14 @@ test('Gravatar falls back to initials when the image fails to load', async () =>
   }
 });
 
-test('Gravatar retries rendering when the avatar URL changes', async () => {
+test('Avatar retries rendering when the avatar URL changes', async () => {
   const container = document.createElement('div');
   let root: Root | null = null;
 
   try {
     await act(async () => {
       root = createRoot(container);
-      root.render(<Gravatar fallback="Reviewer" size="medium" url="https://example.com/first" />);
+      root.render(<Avatar fallback="Reviewer" size="medium" url="https://example.com/first" />);
     });
 
     await act(async () => {
@@ -55,7 +55,7 @@ test('Gravatar retries rendering when the avatar URL changes', async () => {
     expect(container.textContent).toBe('RE');
 
     await act(async () => {
-      root?.render(<Gravatar fallback="Reviewer" size="medium" url="https://example.com/second" />);
+      root?.render(<Avatar fallback="Reviewer" size="medium" url="https://example.com/second" />);
     });
 
     expect(container.querySelector('img')?.getAttribute('src')).toBe('https://example.com/second');

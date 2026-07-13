@@ -2933,7 +2933,7 @@ diffs-container .review-comment-thread {
   width: 100%;
 }
 
-.gravatar {
+.avatar {
   background: rgb(127 127 127 / 0.14);
   border-radius: var(--review-avatar-radius, 24px);
   color: var(--muted);
@@ -2944,24 +2944,24 @@ diffs-container .review-comment-thread {
   object-fit: cover;
 }
 
-.review-comment > .gravatar {
+.review-comment > .avatar {
   align-self: start;
   margin-top: 1px;
 }
 
-.gravatar.medium {
+.avatar.medium {
   font: 700 12px/1 var(--font-sans);
   height: 34px;
   width: 34px;
 }
 
-.gravatar.small {
+.avatar.small {
   font: 700 7px/1 var(--font-sans);
   height: 14px;
   width: 14px;
 }
 
-.gravatar.fallback {
+.avatar.fallback {
   align-items: center;
 }
 

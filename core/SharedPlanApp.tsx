@@ -18,7 +18,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import { Gravatar } from './app/components/Gravatar.tsx';
+import { Avatar } from './app/components/Avatar.tsx';
 import { ReadOnlyMarkdownView } from './app/components/ReadOnlyMarkdownView.tsx';
 import type {
   GitIdentity,
@@ -239,7 +239,7 @@ function CommentComposer({
       }}
     >
       <div className="review-comment">
-        <Gravatar fallback={displayName} size="medium" url={identity?.gravatarUrl} />
+        <Avatar fallback={displayName} size="medium" url={identity?.gravatarUrl} />
         <div className="review-comment-body">
           <div className="review-comment-header plan-comment-header">
             <div className="plan-comment-heading">
@@ -345,7 +345,7 @@ function SharedPlanMessage({
 
   return (
     <div className={`review-comment plan-comment-message${editing ? ' editing' : ''}`}>
-      <Gravatar fallback={displayName} size="medium" url={message.author.avatarUrl} />
+      <Avatar fallback={displayName} size="medium" url={message.author.avatarUrl} />
       <div className="review-comment-body">
         <div
           className={`review-comment-header plan-comment-header${

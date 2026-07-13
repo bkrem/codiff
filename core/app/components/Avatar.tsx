@@ -20,7 +20,7 @@ const getAvatarInitials = (name: string) => {
   return `${getInitial(parts[0])}${getInitial(parts.at(-1) ?? '')}` || '?';
 };
 
-function Gravatar({
+function Avatar({
   fallback,
   size,
   url,
@@ -29,7 +29,7 @@ function Gravatar({
   size: 'medium' | 'small';
   url?: string;
 }) {
-  const className = `gravatar ${size}`;
+  const className = `avatar ${size}`;
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const showImage = url && failedUrl !== url;
 
@@ -48,4 +48,4 @@ function Gravatar({
   );
 }
 
-export { Gravatar };
+export { Avatar };

@@ -26,7 +26,7 @@ import type {
   PlanHandoffStatus,
   PlanReview,
 } from '../../types.ts';
-import { Gravatar } from './Gravatar.tsx';
+import { Avatar } from './Avatar.tsx';
 import {
   MarkdownDocumentEditor,
   type MarkdownDocumentEditorHandle,
@@ -98,7 +98,6 @@ const getPlanCommentTargetLabel = (thread: PlanCommentThread) => {
 export function PlanCommentCard({
   active,
   detached,
-  identity,
   onActivate,
   onBodyChange,
   onDelete,
@@ -111,7 +110,6 @@ export function PlanCommentCard({
 }: {
   active: boolean;
   detached: boolean;
-  identity: GitIdentity | null;
   onActivate: () => void;
   onBodyChange: (body: string) => void;
   onDelete: () => void;
@@ -125,6 +123,7 @@ export function PlanCommentCard({
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const body = getThreadBody(thread);
   const author = thread.createdBy;
+  const displayName = author.name || 'Unknown author';
   const resolved = thread.status === 'resolved';
   const resolutionLabel =
     thread.resolution?.reason === 'agent-handled'
@@ -148,15 +147,11 @@ export function PlanCommentCard({
       onPointerDown={onActivate}
     >
       <div className="review-comment">
-        <Gravatar
-          fallback={author.name || identity?.name || identity?.email || 'You'}
-          size="medium"
-          url={author.avatarUrl || identity?.gravatarUrl}
-        />
+        <Avatar fallback={displayName} size="medium" url={author.avatarUrl} />
         <div className="review-comment-body">
           <div className="review-comment-header plan-comment-header">
             <div className="plan-comment-heading">
-              <strong>{author.name}</strong>
+              <strong>{displayName}</strong>
               {resolved ? <span className="plan-comment-status">{resolutionLabel}</span> : null}
               <button
                 aria-label={`Show comment target: ${getPlanCommentTargetLabel(thread)}`}
@@ -221,7 +216,6 @@ export function PlanCommentCard({
 
 export function PlanCommentRail({
   activeThreadId,
-  identity,
   layoutPass,
   layouts,
   onActivate,
@@ -236,7 +230,6 @@ export function PlanCommentRail({
   workspace,
 }: {
   activeThreadId: string | null;
-  identity: GitIdentity | null;
   layoutPass: number;
   layouts: ReadonlyArray<MarkdownAnnotationLayout>;
   onActivate: (thread: PlanCommentThread) => void;
@@ -351,7 +344,6 @@ export function PlanCommentRail({
               <PlanCommentCard
                 active={activeThreadId === thread.id}
                 detached={layout?.detached ?? true}
-                identity={identity}
                 onActivate={() => onActivate(thread)}
                 onBodyChange={(body) => onBodyChange(thread.id, body)}
                 onDelete={() => onDelete(thread.id)}
@@ -373,7 +365,6 @@ export function PlanCommentRail({
                 <PlanCommentCard
                   active={activeThreadId === thread.id}
                   detached
-                  identity={identity}
                   key={thread.id}
                   onActivate={() => onActivate(thread)}
                   onBodyChange={(body) => onBodyChange(thread.id, body)}
@@ -951,7 +942,6 @@ export function PlanEditorView({
           {review.threads.length > 0 ? (
             <PlanCommentRail
               activeThreadId={activeThreadId}
-              identity={identity}
               layoutPass={layoutPass}
               layouts={effectiveLayouts}
               onActivate={activateThread}
