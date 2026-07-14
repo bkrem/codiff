@@ -1,6 +1,7 @@
 import { expect, test } from 'vite-plus/test';
 import type { ReviewComment } from '../lib/app-types.ts';
 import {
+  findReusableReviewCommentDraft,
   getPendingPullRequestReviewComments,
   getReviewCommentsFromState,
   getVisibleReviewComments,
@@ -125,6 +126,41 @@ test('getPendingPullRequestReviewComments excludes comments being submitted indi
   expect(
     getPendingPullRequestReviewComments([{ ...comment, remoteSubmit: { status: 'submitting' } }]),
   ).toEqual([]);
+});
+
+test('findReusableReviewCommentDraft preserves an active draft with unflushed content', () => {
+  const activeDraft = createReviewComment({ body: '', id: 'active' });
+  const reusableDraft = createReviewComment({ body: '', id: 'reusable', lineNumber: 6 });
+
+  expect(
+    findReusableReviewCommentDraft([activeDraft, reusableDraft], {
+      body: 'Still typing.',
+      id: activeDraft.id,
+    }),
+  ).toBe(reusableDraft);
+});
+
+test('findReusableReviewCommentDraft returns no draft when the only empty draft has content', () => {
+  const activeDraft = createReviewComment({ body: '', id: 'active' });
+
+  expect(
+    findReusableReviewCommentDraft([activeDraft], {
+      body: 'Still typing.',
+      id: activeDraft.id,
+    }),
+  ).toBeUndefined();
+});
+
+test('findReusableReviewCommentDraft skips read-only drafts and reuses whitespace-only drafts', () => {
+  const readOnlyDraft = createReviewComment({ body: '', id: 'readonly', isReadOnly: true });
+  const activeDraft = createReviewComment({ body: '', id: 'active' });
+
+  expect(
+    findReusableReviewCommentDraft([readOnlyDraft, activeDraft], {
+      body: '   ',
+      id: activeDraft.id,
+    }),
+  ).toBe(activeDraft);
 });
 
 test('getReviewCommentsFromState carries GitLab discussion metadata through to review comments', () => {

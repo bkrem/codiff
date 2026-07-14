@@ -14,7 +14,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, expect, test } from 'vite-plus/test';
-import { formatHelpText, parseArguments, resolvePullRequestUrl } from '../../bin/arguments.js';
+import {
+  formatHelpText,
+  getReviewSource,
+  parseArguments,
+  resolvePullRequestUrl,
+} from '../../bin/arguments.js';
 import type { PlanReview } from '../types.ts';
 import { createFakeCommandLogger, createFakeOpenLogger } from './helpers/cli.ts';
 
@@ -112,6 +117,21 @@ test('parseArguments treats plain branch refs as branch refs', async () => {
       version: false,
       walkthrough: false,
     });
+  });
+});
+
+test('shared branch reviews include uncommitted changes', () => {
+  expect(
+    getReviewSource({
+      branchRef: 'main',
+      commitRef: null,
+      pullRequestProvider: null,
+      pullRequestUrl: null,
+      range: null,
+    }),
+  ).toEqual({
+    ref: 'main',
+    type: 'branch-working-tree',
   });
 });
 

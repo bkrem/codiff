@@ -64,6 +64,7 @@ import { compactPath, fileTreeSort, fuzzyMatches, sortFiles, statusForTree } fro
 import { isNativeInputTarget } from './lib/keyboard.ts';
 import { isGeneratedWalkthroughFile } from './lib/narrative-walkthrough-diff.js';
 import {
+  findReusableReviewCommentDraft,
   getCommentKey,
   getPendingPullRequestReviewComments,
   getReviewCommentsFromState,
@@ -1211,8 +1212,9 @@ function ReviewSurface({
         return;
       }
 
-      const emptyDraft = reviewCommentsRef.current.find(
-        (candidate) => !candidate.isReadOnly && candidate.body.length === 0,
+      const emptyDraft = findReusableReviewCommentDraft(
+        reviewCommentsRef.current,
+        activeReviewCommentDraftRef.current,
       );
       if (emptyDraft) {
         const id = crypto.randomUUID();

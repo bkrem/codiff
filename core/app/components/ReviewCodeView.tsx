@@ -142,6 +142,16 @@ const preloadMarkdownEditor = () => {
 };
 const MarkdownEditor = lazy(loadMarkdownEditor);
 
+const isEditableWorkingTreeSection = (
+  sourceType: ReviewSource['type'],
+  file: ChangedFile,
+  section: DiffSection,
+) =>
+  (sourceType === 'working-tree' || sourceType === 'branch-working-tree') &&
+  file.status !== 'deleted' &&
+  file.sections.at(-1)?.id === section.id &&
+  (section.kind === 'staged' || section.kind === 'unstaged');
+
 function CopyFilePathButton({ path }: { path: string }) {
   const [copied, markCopied] = useCopiedState(1600);
 
@@ -2567,15 +2577,16 @@ export function ReviewCodeView({
       ? files
       : (blocks?.map((block) => block.file).filter((file): file is ChangedFile => file != null) ??
         []);
-  const initialEditableMarkdownSections =
-    !isReadOnly && source.type === 'working-tree'
-      ? initialMarkdownFiles.flatMap((file) => {
-          const section = file.sections.at(-1);
-          return file.status !== 'deleted' && isMarkdownFilePath(file.path) && section
-            ? [section.id]
-            : [];
-        })
-      : [];
+  const initialEditableMarkdownSections = !isReadOnly
+    ? initialMarkdownFiles.flatMap((file) => {
+        const section = file.sections.at(-1);
+        return section &&
+          isMarkdownFilePath(file.path) &&
+          isEditableWorkingTreeSection(source.type, file, section)
+          ? [section.id]
+          : [];
+      })
+    : [];
   const [markdownPreviewSections, setMarkdownPreviewSections] = useState<ReadonlySet<string>>(
     () => new Set([...initialMarkdownPreviewSectionIds, ...initialEditableMarkdownSections]),
   );
@@ -2767,9 +2778,7 @@ export function ReviewCodeView({
         const canEditMarkdown =
           canRenderMarkdown &&
           !isReadOnly &&
-          source.type === 'working-tree' &&
-          file.status !== 'deleted' &&
-          file.sections.at(-1)?.id === section.id;
+          isEditableWorkingTreeSection(source.type, file, section);
         const isMarkdownPreview = canRenderMarkdown && markdownPreviewSections.has(section.id);
         const isSelected = block.fileSelected ?? block.selected ?? selectedPath === file.path;
         const reviewVersionPrefix = `${itemVersionByKey[reviewKey] ?? 0}:${block.id}:${
@@ -3359,8 +3368,7 @@ export function ReviewCodeView({
       clearCommentLineHighlight();
       if (
         markdownPreviewSections.has(section.id) &&
-        source.type === 'working-tree' &&
-        file.status !== 'deleted'
+        isEditableWorkingTreeSection(source.type, file, section)
       ) {
         if (refreshingMarkdownSectionsRef.current.has(section.id)) {
           return;

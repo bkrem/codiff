@@ -155,6 +155,17 @@ export const getPendingPullRequestReviewComments = (
   });
 };
 
+export const findReusableReviewCommentDraft = (
+  comments: ReadonlyArray<ReviewComment>,
+  activeDraft: Pick<ReviewComment, 'body' | 'id'> | null = null,
+) =>
+  comments.find(
+    (comment) =>
+      !comment.isReadOnly &&
+      comment.body.length === 0 &&
+      !(activeDraft?.id === comment.id && activeDraft.body.trim().length > 0),
+  );
+
 export const getCommentKey = (
   comment: Pick<
     ReviewComment,

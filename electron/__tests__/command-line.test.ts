@@ -17,7 +17,7 @@ const { getInitialRepositoryPath, parseCommandLineArguments, parseGitHubRemoteUr
         planResultFile?: string;
         repositoryPathProvided: boolean;
         source?:
-          | { ref: string; type: 'branch' }
+          | { ref: string; type: 'branch-working-tree' }
           | { ref: string; type: 'commit' }
           | { base: string; head: string; symmetric: boolean; type: 'range' }
           | { type: 'pull-request'; url: string };
@@ -34,7 +34,7 @@ const { getInitialRepositoryPath, parseCommandLineArguments, parseGitHubRemoteUr
         planResultFile?: string;
         repositoryPathProvided: boolean;
         source?:
-          | { ref: string; type: 'branch' }
+          | { ref: string; type: 'branch-working-tree' }
           | { ref: string; type: 'commit' }
           | { base: string; head: string; symmetric: boolean; type: 'range' }
           | { type: 'pull-request'; url: string };
@@ -190,7 +190,7 @@ test('parses plain refs as branch sources', async () => {
         repositoryPathProvided: false,
         source: {
           ref: 'feature',
-          type: 'branch',
+          type: 'branch-working-tree',
         },
         walkthrough: false,
       },
@@ -203,7 +203,7 @@ test('parses plain refs as branch sources', async () => {
         repositoryPathProvided: true,
         source: {
           ref: 'feature',
-          type: 'branch',
+          type: 'branch-working-tree',
         },
         walkthrough: false,
       },
@@ -232,7 +232,7 @@ test('parses missing plain refs in Git repositories as branch sources', async ()
         repositoryPathProvided: false,
         source: {
           ref: 'definitely-missing-branch',
-          type: 'branch',
+          type: 'branch-working-tree',
         },
         walkthrough: false,
       },
@@ -247,7 +247,7 @@ test('parses missing plain refs in Git repositories as branch sources', async ()
         repositoryPathProvided: true,
         source: {
           ref: 'definitely-missing-branch',
-          type: 'branch',
+          type: 'branch-working-tree',
         },
         walkthrough: false,
       },
@@ -285,7 +285,7 @@ test('parses hex-like refs as commits before branches', async () => {
       parseCommandLineArguments(['codiff', '--branch', shortHash]).launchOptions.source,
     ).toEqual({
       ref: shortHash,
-      type: 'branch',
+      type: 'branch-working-tree',
     });
   } finally {
     process.chdir(previousCwd);

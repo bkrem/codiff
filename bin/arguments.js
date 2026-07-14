@@ -103,6 +103,32 @@ export const usageExamples = [
   { command: 'codiff --share HEAD', description: 'Share a walkthrough for a commit.' },
 ];
 
+export const getReviewSource = ({
+  branchRef,
+  commitRef,
+  pullRequestProvider,
+  pullRequestUrl,
+  range,
+}) =>
+  range
+    ? {
+        base: range.base,
+        head: range.head,
+        symmetric: range.symmetric,
+        type: 'range',
+      }
+    : pullRequestUrl
+      ? {
+          ...(pullRequestProvider ? { provider: pullRequestProvider } : {}),
+          type: 'pull-request',
+          url: pullRequestUrl,
+        }
+      : commitRef
+        ? { ref: commitRef, type: 'commit' }
+        : branchRef
+          ? { ref: branchRef, type: 'branch-working-tree' }
+          : undefined;
+
 const parseArgsOptions = Object.fromEntries(
   flagDefinitions.map(({ name, short, type }) => [name, { type, ...(short ? { short } : {}) }]),
 );

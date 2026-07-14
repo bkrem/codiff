@@ -251,6 +251,151 @@ test('switching edited Markdown back to a diff flushes and refreshes it first', 
   }
 });
 
+test('combined branch Markdown edits only the final working-tree section', async () => {
+  const order: Array<string> = [];
+  const createCombinedFile = (contents: string, fingerprint: string) => {
+    const file = createLoadedMarkdownFile(contents, fingerprint);
+    const section = file.sections[0]!;
+    return {
+      ...file,
+      sections: [
+        {
+          ...section,
+          id: 'plan.md:commit',
+          kind: 'commit' as const,
+          newFile: {
+            contents: '# Committed\n',
+            name: file.path,
+          },
+          patch: 'diff --git a/plan.md b/plan.md\n@@ -1 +1 @@\n-# Original\n+# Committed\n',
+        },
+        {
+          ...section,
+          id: 'plan.md:unstaged',
+          kind: 'unstaged' as const,
+          oldFile: {
+            contents: '# Committed\n',
+            name: file.path,
+          },
+        },
+      ],
+    } satisfies ChangedFile;
+  };
+  const initialFile = createCombinedFile('# Edited\n', 'plan.md:combined-initial');
+  const refreshedFile = createCombinedFile('# Saved\n', 'plan.md:combined-refreshed');
+  const combinedSource = {
+    baseRef: 'base123',
+    headRef: 'head123',
+    ref: 'main',
+    type: 'branch-working-tree',
+  } satisfies ReviewSource;
+
+  markdownEditorMock.flush.mockImplementation(async () => {
+    order.push('flush');
+    return true;
+  });
+
+  function Harness() {
+    const [file, setFile] = useState(initialFile);
+    return (
+      <ReviewCodeViewHarness
+        files={[file]}
+        onRefreshMarkdown={async () => {
+          order.push('refresh');
+          setFile(refreshedFile);
+          return true;
+        }}
+        source={combinedSource}
+      />
+    );
+  }
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<Harness />);
+    });
+
+    expect(container.querySelector('[aria-label="Edit plan.md"]')).not.toBeNull();
+    const diffButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      ({ textContent }) => textContent === 'View as Diff',
+    );
+    expect(diffButton).not.toBeUndefined();
+
+    await act(async () => {
+      diffButton?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('[aria-label="Edit plan.md"]')).toBeNull();
+    });
+    expect(order).toEqual(['flush', 'refresh']);
+    expect(JSON.stringify(codeViewMock.lastItems)).toContain('# Saved');
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
+test('combined branch-only Markdown sections remain read-only', async () => {
+  const loadedFile = createLoadedMarkdownFile('# Committed\n', 'plan.md:commit-only');
+  const file = {
+    ...loadedFile,
+    sections: loadedFile.sections.map((section) => ({
+      ...section,
+      id: 'plan.md:commit',
+      kind: 'commit' as const,
+    })),
+  } satisfies ChangedFile;
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <ReviewCodeViewHarness
+          files={[file]}
+          source={{
+            baseRef: 'base123',
+            headRef: 'head123',
+            ref: 'main',
+            type: 'branch-working-tree',
+          }}
+        />,
+      );
+    });
+
+    expect(container.querySelector('[aria-label="Edit plan.md"]')).toBeNull();
+    const markdownButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      ({ textContent }) => textContent === 'View as Markdown',
+    );
+    expect(markdownButton).not.toBeUndefined();
+
+    await act(async () => {
+      markdownButton?.click();
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('[aria-label="Preview plan.md"]')).not.toBeNull();
+    });
+    expect(container.querySelector('[aria-label="Edit plan.md"]')).toBeNull();
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
 test('read-only Markdown previews render with the shared Markdown editor', async () => {
   const sectionId = 'README.md:unstaged';
   const file = {

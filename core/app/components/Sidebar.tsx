@@ -651,7 +651,7 @@ function HistorySidebar({
                 ref: branchSource.ref,
                 type: 'branch-working-tree',
               } satisfies ReviewSource,
-              subject: `Branch + uncommitted (vs ${branchSource.ref})`,
+              subject: `All changes vs ${branchSource.ref}`,
             }
           : null,
         !normalizedQuery
@@ -663,7 +663,7 @@ function HistorySidebar({
               kind: 'entry' as const,
               ref: 'branch',
               source: branchSource satisfies ReviewSource,
-              subject: `Branch diff vs ${branchSource.ref}`,
+              subject: `Committed only vs ${branchSource.ref}`,
             }
           : null,
         localRows.length > 0

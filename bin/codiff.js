@@ -9,7 +9,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
-import { formatHelpText, parseArguments, resolvePullRequestUrl } from './arguments.js';
+import {
+  formatHelpText,
+  getReviewSource,
+  parseArguments,
+  resolvePullRequestUrl,
+} from './arguments.js';
 import { waitForPlanResult } from './plan-result.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -182,24 +187,13 @@ const run = async () => {
       return;
     }
 
-    const source = range
-      ? {
-          base: range.base,
-          head: range.head,
-          symmetric: range.symmetric,
-          type: 'range',
-        }
-      : pullRequestUrl
-        ? {
-            ...(pullRequestProvider ? { provider: pullRequestProvider } : {}),
-            type: 'pull-request',
-            url: pullRequestUrl,
-          }
-        : commitRef
-          ? { ref: commitRef, type: 'commit' }
-          : branchRef
-            ? { ref: branchRef, type: 'branch' }
-            : undefined;
+    const source = getReviewSource({
+      branchRef,
+      commitRef,
+      pullRequestProvider,
+      pullRequestUrl,
+      range,
+    });
 
     try {
       const commonOptions = {

@@ -724,7 +724,8 @@ test('branch history keeps branch diff available after selecting uncommitted cha
 
     await waitFor(() => {
       expect(container.querySelector('.loading')).toBeNull();
-      expect(findButton('Branch diff')).toBeTruthy();
+      expect(findButton('Committed only vs main')).toBeTruthy();
+      expect(findButton('All changes vs main')).toBeTruthy();
     });
 
     await act(async () => {
@@ -733,11 +734,11 @@ test('branch history keeps branch diff available after selecting uncommitted cha
 
     await waitFor(() => {
       expect(getRepositoryState).toHaveBeenCalledWith({ type: 'working-tree' });
-      expect(findButton('Branch diff')).toBeTruthy();
+      expect(findButton('Committed only vs main')).toBeTruthy();
     });
 
     await act(async () => {
-      findButton('Branch diff')?.click();
+      findButton('Committed only vs main')?.click();
     });
 
     await waitFor(() => {
@@ -801,7 +802,7 @@ test('repository reload restores branch diff scope after selecting uncommitted c
 
     await waitFor(() => {
       expect(container.querySelector('.loading')).toBeNull();
-      expect(findButton('Branch diff')).toBeTruthy();
+      expect(findButton('Committed only vs main')).toBeTruthy();
     });
     expect(getRepositoryState).toHaveBeenCalledWith({ type: 'working-tree' });
     expect(getRepositoryHistory).toHaveBeenCalledWith(expect.any(Number), branchSource);
@@ -814,7 +815,7 @@ test('repository reload restores branch diff scope after selecting uncommitted c
 });
 
 test('repository reload does not let stale selection override launch source', async () => {
-  const launchSource = { ref: 'main', type: 'branch' } satisfies ReviewSource;
+  const launchSource = { ref: 'main', type: 'branch-working-tree' } satisfies ReviewSource;
   const staleState = {
     ...repositoryState,
     source: { type: 'working-tree' },
@@ -2732,6 +2733,134 @@ test('clicking the change banner refreshes the repository in place', async () =>
     const appOccurrences = container.textContent?.split('app.ts').length ?? 1;
     expect(appOccurrences - 1).toBeLessThanOrEqual(2);
     expect(container.textContent).not.toContain('-old\n+new\n');
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
+test('refreshing all changes re-resolves the branch snapshot', async () => {
+  const initialSource = {
+    baseRef: 'base123',
+    headRef: 'head123',
+    ref: 'main',
+    type: 'branch-working-tree',
+  } satisfies ReviewSource;
+  const refreshedSource = {
+    baseRef: 'base123',
+    headRef: 'head456',
+    ref: 'main',
+    type: 'branch-working-tree',
+  } satisfies ReviewSource;
+  const initialFile = createChangedFile('src/initial.ts', { kind: 'commit' });
+  const addedFile = createChangedFile('src/added.ts', { kind: 'commit' });
+  const initialState = {
+    ...repositoryState,
+    branch: 'feature',
+    files: [initialFile],
+    source: initialSource,
+  } satisfies RepositoryState;
+  const refreshedState = {
+    ...initialState,
+    files: [initialFile, addedFile],
+    source: refreshedSource,
+  } satisfies RepositoryState;
+  let onRepositoryChanged: ((change: { root: string }) => void) | null = null;
+  let branchWorkingTreeRequests = 0;
+  const getRepositoryState = vi.fn<Window['codiff']['getRepositoryState']>(
+    async (requestedSource) => {
+      if (requestedSource?.type === 'branch-diff') {
+        return {
+          ...refreshedState,
+          source: requestedSource,
+        };
+      }
+      branchWorkingTreeRequests += 1;
+      return branchWorkingTreeRequests === 1 ? initialState : refreshedState;
+    },
+  );
+  const getRepositoryHistory = vi.fn(async () => ({
+    entries: [],
+    root: '/repo',
+  }));
+
+  window.codiff = createCodiffMock({
+    getLaunchOptions: vi.fn(async () => ({
+      repositoryPathProvided: true,
+      source: { ref: 'main', type: 'branch-working-tree' as const },
+      walkthrough: false,
+    })),
+    getRepositoryHistory,
+    getRepositoryState,
+    onRepositoryChanged: vi.fn((callback) => {
+      onRepositoryChanged = callback;
+      return () => {
+        onRepositoryChanged = null;
+      };
+    }),
+  });
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+  const findButton = (label: string) =>
+    Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(label),
+    );
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.loading')).toBeNull();
+      expect(onRepositoryChanged).not.toBeNull();
+    });
+
+    await act(async () => {
+      onRepositoryChanged?.({ root: '/repo' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.repository-change-reload')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('added.ts');
+    });
+    expect(getRepositoryState).toHaveBeenNthCalledWith(2, {
+      ref: 'main',
+      type: 'branch-working-tree',
+    });
+    expect(getRepositoryHistory).toHaveBeenLastCalledWith(expect.any(Number), {
+      ref: 'main',
+      type: 'branch-working-tree',
+    });
+
+    await act(async () => {
+      findButton('History')?.click();
+    });
+    await waitFor(() => {
+      expect(findButton('Committed only vs main')).toBeTruthy();
+    });
+
+    await act(async () => {
+      findButton('Committed only vs main')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(getRepositoryState).toHaveBeenLastCalledWith({
+      baseRef: refreshedSource.baseRef,
+      headRef: refreshedSource.headRef,
+      ref: refreshedSource.ref,
+      type: 'branch-diff',
+    });
   } finally {
     if (root) {
       await act(async () => root?.unmount());

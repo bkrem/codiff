@@ -130,6 +130,14 @@ export const getSourceLabel = (source: ReviewSource) =>
 export const getHistorySource = (source: ReviewSource): ReviewSource | undefined =>
   getSourceCapabilities(source).historySource ? source : undefined;
 
+export const getRefreshSource = (source: ReviewSource): ReviewSource =>
+  source.type === 'branch-working-tree'
+    ? {
+        ref: source.ref,
+        type: 'branch-working-tree',
+      }
+    : source;
+
 export const supportsLazyDiffContent = (source: ReviewSource) =>
   getSourceCapabilities(source).lazyDiffContent;
 

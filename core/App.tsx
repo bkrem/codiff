@@ -90,6 +90,7 @@ import {
 } from './lib/review-command-target.ts';
 import {
   buildReviewCommentsMarkdown,
+  findReusableReviewCommentDraft,
   getCommentKey,
   getPendingPullRequestReviewComments,
   getReviewCommentRangeProps,
@@ -113,6 +114,7 @@ import {
   getEmptySourceDetail,
   getEmptySourceTitle,
   getHistorySource,
+  getRefreshSource,
   getRepositoryLoadError,
   getSourceKey,
   getSourceLabel,
@@ -214,18 +216,6 @@ const updateWalkthroughOutdatedPathsForRefresh = (
   return next;
 };
 
-const isLaunchHistoryBranchSource = (
-  source: ReviewSource | undefined,
-): source is Extract<ReviewSource, { type: 'branch' }> => source?.type === 'branch';
-
-const getLaunchReviewSource = (launchOptions: CodiffLaunchOptions): ReviewSource | undefined =>
-  isLaunchHistoryBranchSource(launchOptions.source) ? undefined : launchOptions.source;
-
-const getLaunchHistoryBranchSource = (
-  launchOptions: CodiffLaunchOptions,
-): Extract<ReviewSource, { type: 'branch' }> | undefined =>
-  isLaunchHistoryBranchSource(launchOptions.source) ? launchOptions.source : undefined;
-
 const getReloadSourceForLaunch = (
   reloadSelection: ReturnType<typeof consumeReloadSelection>,
   launchOptions: CodiffLaunchOptions,
@@ -234,12 +224,11 @@ const getReloadSourceForLaunch = (
     return undefined;
   }
 
-  const launchReviewSource = getLaunchReviewSource(launchOptions);
-  if (!launchReviewSource) {
+  if (!launchOptions.source) {
     return reloadSelection.source;
   }
 
-  return getSourceKey(reloadSelection.source) === getSourceKey(launchReviewSource)
+  return getSourceKey(reloadSelection.source) === getSourceKey(launchOptions.source)
     ? reloadSelection.source
     : undefined;
 };
@@ -701,18 +690,10 @@ export default function App() {
         ...nextState,
         files: sortFiles(nextState.files),
       };
-      let nextHistorySource: ReviewSource | null =
+      const nextHistorySource: ReviewSource | null =
         getReloadHistorySource(reloadSelection, orderedState) ??
         getHistorySource(orderedState.source) ??
         null;
-      const launchHistoryBranch = getLaunchHistoryBranchSource(nextLaunchOptions);
-      if (!nextHistorySource && launchHistoryBranch) {
-        const branchState = await window.codiff.getRepositoryState(launchHistoryBranch);
-        if (canceled) {
-          return;
-        }
-        nextHistorySource = branchState.source.type === 'branch-diff' ? branchState.source : null;
-      }
       const history = await window.codiff.getRepositoryHistory(
         HISTORY_PAGE_SIZE,
         nextHistorySource ?? undefined,
@@ -1542,10 +1523,14 @@ export default function App() {
 
     const request = sourceRequestRef.current + 1;
     sourceRequestRef.current = request;
+    const refreshSource = getRefreshSource(previousState.source);
+    const refreshHistorySource = historySourceRef.current
+      ? getRefreshSource(historySourceRef.current)
+      : undefined;
 
     Promise.all([
-      window.codiff.getRepositoryState(previousState.source),
-      window.codiff.getRepositoryHistory(historyLimit, historySourceRef.current ?? undefined),
+      window.codiff.getRepositoryState(refreshSource),
+      window.codiff.getRepositoryHistory(historyLimit, refreshHistorySource),
     ])
       .then(([nextState, history]) => {
         if (sourceRequestRef.current !== request) {
@@ -1576,6 +1561,7 @@ export default function App() {
         });
         setHistoryEntries(history.entries);
         setHistoryHasMore(history.entries.length >= historyLimit);
+        setHistorySource(getHistorySource(orderedState.source) ?? historySourceRef.current);
         setSelectedPath((current) =>
           current != null && orderedState.files.some((file) => file.path === current)
             ? current
@@ -2205,15 +2191,10 @@ export default function App() {
         return;
       }
 
-      const activeDraft = activeReviewCommentDraftRef.current;
-      const emptyDraft = reviewCommentsRef.current.find((candidate) => {
-        if (candidate.isReadOnly || candidate.body.length > 0) {
-          return false;
-        }
-        const hasUnflushedContent =
-          activeDraft?.id === candidate.id && activeDraft.body.trim().length > 0;
-        return !hasUnflushedContent;
-      });
+      const emptyDraft = findReusableReviewCommentDraft(
+        reviewCommentsRef.current,
+        activeReviewCommentDraftRef.current,
+      );
       if (emptyDraft) {
         const id = crypto.randomUUID();
         setFocusCommentId(id);
