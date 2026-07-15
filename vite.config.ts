@@ -27,7 +27,6 @@ export default defineConfig({
       'pnpm-lock.yaml',
       'core/__generated__/',
       'core/node_modules/',
-      'core/translations/',
     ],
     singleQuote: true,
   },

@@ -1,16 +1,6 @@
-import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
-import { FileTree, useFileTree } from '@pierre/trees/react';
 import { ExternalLink } from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ReviewFileTree } from './app/components/FileTree.tsx';
 import {
   MergeRequestCommentsView,
   SidebarGeneralCommentList,
@@ -35,6 +25,7 @@ import {
   type WalkthroughBlockScrollTarget,
 } from './app/components/walkthrough/NarrativeWalkthroughView.tsx';
 import { useNarrativeNavigation } from './app/components/walkthrough/useNarrativeNavigation.ts';
+import { WalkthroughDiffSurface } from './app/components/walkthrough/WalkthroughDiffSurface.tsx';
 import { WalkthroughProgress } from './app/components/walkthrough/WalkthroughProgress.tsx';
 import {
   CODE_FONT_SIZE_DEFAULT,
@@ -50,13 +41,11 @@ import { getAgentLabel } from './lib/app-constants.ts';
 import type { CodeViewInstance, ReviewComment, ReviewScrollTarget } from './lib/app-types.ts';
 import {
   fileHasVisibleDiff,
-  formatTreeLineCount,
   getDiffLineCount,
-  getDiffLineCountTitle,
   getTotalDiffLineCount,
   isMarkdownFilePath,
 } from './lib/diff.ts';
-import { compactPath, fileTreeSort, fuzzyMatches, sortFiles, statusForTree } from './lib/files.ts';
+import { compactPath, fuzzyMatches, sortFiles } from './lib/files.ts';
 import { isNativeInputTarget } from './lib/keyboard.ts';
 import { isGeneratedWalkthroughFile } from './lib/narrative-walkthrough-diff.js';
 import {
@@ -68,7 +57,6 @@ import { getSelectedPathFromScroll } from './lib/review-scroll.ts';
 import { SIDEBAR_DEFAULT_WIDTH, readSidebarWidth, writeSidebarWidth } from './lib/sidebar-width.ts';
 import { getSourceLabel, getSourceKey } from './lib/source.ts';
 import type {
-  ChangedFile,
   CodiffPreferences,
   GitIdentity,
   NarrativeWalkthrough,
@@ -93,7 +81,6 @@ const emptyReviewComments: ReadonlyArray<ReviewComment> = [];
 const emptyGeneralCommentThreads: ReadonlyArray<PullRequestGeneralCommentThread> = [];
 const emptyPaths = new Set<string>();
 const emptyWalkthroughNotes = new Map();
-const walkthroughCodeViewBottomInset = 96;
 const defaultSharedPreferences: SharedWalkthroughSnapshot['preferences'] = {
   codeFontFamily: 'Fira Code',
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
@@ -184,134 +171,6 @@ const disabledCommitMessage = async (): Promise<WalkthroughCommitMessageResult> 
   reason: 'Shared walkthroughs are read-only.',
   status: 'unavailable',
 });
-
-function SharedFileTree({
-  files,
-  onActivatePath,
-  selectedPath,
-  showWhitespace,
-}: {
-  files: ReadonlyArray<ChangedFile>;
-  onActivatePath: (path: string) => void;
-  selectedPath: string | null;
-  showWhitespace: boolean;
-}) {
-  const paths = useMemo(() => files.map((file) => file.path), [files]);
-  const filePathSet = useMemo(() => new Set(paths), [paths]);
-  const lineCountsByPath = useMemo(
-    () => new Map(files.map((file) => [file.path, getDiffLineCount(file, showWhitespace)])),
-    [files, showWhitespace],
-  );
-  const lineCountsByPathRef = useRef(lineCountsByPath);
-  const renderTreeRowDecoration = useCallback<FileTreeRowDecorationRenderer>(({ item }) => {
-    const lineCount = lineCountsByPathRef.current.get(item.path);
-    return lineCount?.countable
-      ? {
-          text: formatTreeLineCount(lineCount),
-          title: getDiffLineCountTitle(lineCount),
-        }
-      : null;
-  }, []);
-  const status = useMemo(
-    () =>
-      files.map((file) => ({
-        path: file.path,
-        status: statusForTree[file.status],
-      })),
-    [files],
-  );
-  const { model } = useFileTree({
-    flattenEmptyDirectories: true,
-    gitStatus: status,
-    initialExpansion: 'open',
-    initialSelectedPaths: selectedPath ? [selectedPath] : [],
-    itemHeight: 30,
-    paths,
-    renderRowDecoration: renderTreeRowDecoration,
-    sort: fileTreeSort,
-    unsafeCSS: `
-      :host {
-        --trees-bg-override: transparent;
-        --trees-bg-muted-override: var(--hover-wash);
-        --trees-border-color-override: var(--sidebar-border);
-        --trees-fg-muted-override: var(--muted);
-        --trees-fg-override: var(--sidebar-text);
-        --trees-focus-ring-color-override: var(--tree-selection-focus);
-        --trees-padding-inline-override: 4px;
-        --trees-search-bg-override: rgb(127 127 127 / 0.1);
-        --trees-search-fg-override: var(--sidebar-text);
-        --trees-selected-bg-override: color-mix(in srgb, var(--tree-selection-bg) 46%, transparent);
-        --trees-selected-fg-override: var(--sidebar-text);
-        --trees-selected-focused-border-color-override: color-mix(in srgb, var(--tree-selection-focus) 42%, transparent);
-        --truncate-marker-background-color: transparent;
-        color-scheme: var(--codiff-tree-color-scheme, light dark);
-        color: var(--sidebar-text);
-        font: 13px/1.35 var(--font-sans);
-      }
-
-      button[data-type='item'] {
-        background-color: transparent;
-        border-radius: 14px;
-        corner-shape: squircle;
-      }
-
-      [data-item-section='decoration'] {
-        color: var(--muted);
-        font: 600 10px/1 var(--font-mono);
-        letter-spacing: 0;
-      }
-    `,
-  });
-
-  useLayoutEffect(() => {
-    lineCountsByPathRef.current = lineCountsByPath;
-    if (model.getFileTreeContainer()) {
-      model.render({});
-    }
-  }, [lineCountsByPath, model]);
-
-  useEffect(() => {
-    model.resetPaths(paths);
-  }, [model, paths]);
-
-  useEffect(() => {
-    model.setGitStatus(status);
-  }, [model, status]);
-
-  useEffect(() => {
-    if (!selectedPath) {
-      return;
-    }
-
-    for (const path of model.getSelectedPaths()) {
-      model.getItem(path)?.deselect();
-    }
-    model.getItem(selectedPath)?.select();
-  }, [model, selectedPath]);
-
-  const handleTreeClick = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      for (const target of event.nativeEvent.composedPath()) {
-        if (!('getAttribute' in target) || typeof target.getAttribute !== 'function') {
-          continue;
-        }
-
-        const path = target.getAttribute('data-item-path');
-        if (path && filePathSet.has(path)) {
-          onActivatePath(path);
-          return;
-        }
-      }
-    },
-    [filePathSet, onActivatePath],
-  );
-
-  return (
-    <div className="file-tree-shell">
-      <FileTree className="file-tree" model={model} onClick={handleTreeClick} />
-    </div>
-  );
-}
 
 type ReviewSurfaceProps = {
   commenting?: SharedWalkthroughCommenting;
@@ -996,23 +855,15 @@ function ReviewSurface({
     onActiveBlockChange: (blockId: string) => void,
   ) => {
     return (
-      <div className="wt-stop wt-diff-surface">
-        <ReviewCodeView
-          {...commonReviewProps}
-          allowViewedToggle
-          blocks={blocks}
-          bottomInset={walkthroughCodeViewBottomInset}
-          files={[]}
-          forceExpandedPaths={new Set()}
-          onActiveBlockChange={onActiveBlockChange}
-          scrollTarget={blockScrollTarget}
-          selectedPath={null}
-          showSourceDescription
-          sourceDescriptionActions={sourceDescriptionActions}
-          sourceDescriptionFooter={sourceDescriptionFooter}
-          walkthroughNotes={emptyWalkthroughNotes}
-        />
-      </div>
+      <WalkthroughDiffSurface
+        allowViewedToggle
+        blocks={blocks}
+        onActiveBlockChange={onActiveBlockChange}
+        reviewProps={commonReviewProps}
+        scrollTarget={blockScrollTarget}
+        sourceDescriptionActions={sourceDescriptionActions}
+        sourceDescriptionFooter={sourceDescriptionFooter}
+      />
     );
   };
 
@@ -1148,7 +999,7 @@ function ReviewSurface({
           ) : null}
         </div>
         {sidebarMode === 'tree' ? (
-          <SharedFileTree
+          <ReviewFileTree
             files={visibleFiles}
             onActivatePath={activateTreePath}
             selectedPath={visibleSelectedPath}
