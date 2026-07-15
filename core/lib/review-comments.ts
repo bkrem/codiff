@@ -1,4 +1,3 @@
-import type { CodeViewLineSelection } from '@pierre/diffs';
 import type {
   ChangedFile,
   DiffSection,
@@ -30,18 +29,6 @@ export const isLineReviewComment = (
   comment: ReviewComment,
 ): comment is ReviewComment & { lineNumber: number; side: 'additions' | 'deletions' } =>
   !isFileReviewComment(comment);
-
-export const getReviewCommentLineSelection = (comment: ReviewComment): CodeViewLineSelection => ({
-  id: `diff:${comment.sectionId}`,
-  range: {
-    end: comment.lineNumber ?? 1,
-    ...(comment.startSide != null && comment.startSide !== comment.side
-      ? { endSide: comment.side }
-      : {}),
-    side: comment.startSide ?? comment.side ?? 'additions',
-    start: comment.startLineNumber ?? comment.lineNumber ?? 1,
-  },
-});
 
 type ReviewPatchRow = {
   additionLineNumber?: number;
@@ -79,10 +66,9 @@ export function updateStickyHeaderState(viewer: CodeViewInstance) {
   }
 }
 
-export const getReviewSideLabel = (side: ReviewComment['side']) =>
-  side === 'additions' ? 'New' : 'Old';
+const getReviewSideLabel = (side: ReviewComment['side']) => (side === 'additions' ? 'New' : 'Old');
 
-export const getReviewCommentStartSide = (comment: Pick<ReviewComment, 'side' | 'startSide'>) =>
+const getReviewCommentStartSide = (comment: Pick<ReviewComment, 'side' | 'startSide'>) =>
   comment.startSide ?? comment.side;
 
 export const getReviewCommentLineLabel = (
@@ -221,7 +207,7 @@ const trimReviewPatchLineTerminator = (line: string) =>
 const getReviewPatchText = (lines: ReadonlyArray<string>, index: number) =>
   trimReviewPatchLineTerminator(lines[index] ?? '');
 
-export const getReviewCommentPatchContext = (
+const getReviewCommentPatchContext = (
   file: ChangedFile,
   section: DiffSection,
   comment: ReviewComment,

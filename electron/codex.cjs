@@ -806,23 +806,14 @@ const runCodex = async (
 
 module.exports = {
   CODEX_NOT_FOUND_CODE,
-  CODEX_NOT_FOUND_MESSAGE,
   CODEX_TIMEOUT_MS,
   cleanText,
   DEFAULT_OPENAI_MODEL,
   FALLBACK_OPENAI_MODEL,
   getCodexCommand,
-  getCodexInstallPaths,
-  getCodexLaunchErrorMessage,
-  getOpenAIModelFallbacks,
-  getOpenAIModelReasoningEffort,
   isCodexNotFoundError,
-  isOpenAIModelAvailabilityError,
   normalizeOpenAIModel,
-  normalizeEnum,
-  oneLine,
   OPENAI_MODELS,
-  parseJSONMessage,
   runCodex,
   truncate,
 };

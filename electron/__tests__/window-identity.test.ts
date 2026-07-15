@@ -7,39 +7,33 @@ import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const { findMatchingWindowIdentity, getWindowIdentity, parseGitHubPullRequestUrl } =
-  require('../window-identity.cjs') as {
-    findMatchingWindowIdentity: (
-      identity: { key: string } | null,
-      existingIdentities: ReadonlyMap<number, { key: string } | null>,
-    ) => number | null;
-    getWindowIdentity: (
-      repositoryPath: string,
-      launchOptions?: {
-        source?:
-          | { type: 'working-tree' }
-          | { ref: string; type: 'branch' }
-          | { baseRef: string; headRef: string; ref: string; type: 'branch-diff' }
-          | { ref: string; type: 'commit' }
-          | {
-              number?: number;
-              owner?: string;
-              repo?: string;
-              type: 'pull-request';
-              url: string;
-            };
-        walkthrough?: boolean;
-        walkthroughFile?: string;
-        planFile?: string;
-        planResultFile?: string;
-      },
-    ) => { key: string; repositoryRoot: string; sourceKey: string } | null;
-    parseGitHubPullRequestUrl: (value: string) => {
-      number: number;
-      owner: string;
-      repo: string;
-    } | null;
-  };
+const { findMatchingWindowIdentity, getWindowIdentity } = require('../window-identity.cjs') as {
+  findMatchingWindowIdentity: (
+    identity: { key: string } | null,
+    existingIdentities: ReadonlyMap<number, { key: string } | null>,
+  ) => number | null;
+  getWindowIdentity: (
+    repositoryPath: string,
+    launchOptions?: {
+      source?:
+        | { type: 'working-tree' }
+        | { ref: string; type: 'branch' }
+        | { baseRef: string; headRef: string; ref: string; type: 'branch-diff' }
+        | { ref: string; type: 'commit' }
+        | {
+            number?: number;
+            owner?: string;
+            repo?: string;
+            type: 'pull-request';
+            url: string;
+          };
+      walkthrough?: boolean;
+      walkthroughFile?: string;
+      planFile?: string;
+      planResultFile?: string;
+    },
+  ) => { key: string; repositoryRoot: string; sourceKey: string } | null;
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -250,13 +244,4 @@ test('window identity matching requires exact identity matches', () => {
   expect(findMatchingWindowIdentity(null, new Map([[1, { key: 'repo-a\0working-tree' }]]))).toBe(
     null,
   );
-});
-
-test('parseGitHubPullRequestUrl rejects non pull request URLs', () => {
-  expect(parseGitHubPullRequestUrl('https://github.com/nkzw-tech/codiff/pull/8')).toEqual({
-    number: 8,
-    owner: 'nkzw-tech',
-    repo: 'codiff',
-  });
-  expect(parseGitHubPullRequestUrl('https://github.com/nkzw-tech/codiff/issues/8')).toBeNull();
 });

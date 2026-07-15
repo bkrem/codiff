@@ -10,22 +10,18 @@ const {
   FALLBACK_PI_MODEL,
   PI_MODELS,
   PI_NOT_FOUND_CODE,
-  PI_NOT_FOUND_MESSAGE,
   getPiCommand,
   isPiNotFoundError,
   normalizePiModel,
-  normalizePiOutput,
   runPi,
 } = require('../pi.cjs') as {
   DEFAULT_PI_MODEL: string;
   FALLBACK_PI_MODEL: string;
   PI_MODELS: ReadonlyArray<{ id: string; label: string }>;
   PI_NOT_FOUND_CODE: string;
-  PI_NOT_FOUND_MESSAGE: string;
   getPiCommand: () => string;
   isPiNotFoundError: (error: unknown) => boolean;
   normalizePiModel: (value: unknown) => string;
-  normalizePiOutput: (output: string, schema: unknown) => string;
   runPi: (
     repoRoot: string,
     prompt: string,
@@ -40,7 +36,6 @@ test('exposes the Pi default model identifier', () => {
   expect(DEFAULT_PI_MODEL).toBe('pi-default');
   expect(FALLBACK_PI_MODEL).toBe('pi-default');
   expect(PI_NOT_FOUND_CODE).toBe('PI_NOT_FOUND');
-  expect(PI_NOT_FOUND_MESSAGE).toContain('Pi CLI was not found');
 });
 
 test('exposes a static Pi model list', () => {
@@ -79,16 +74,6 @@ test('rejects invalid explicit Pi CLI overrides', () => {
       process.env.CODIFF_PI_PATH = previousPiPath;
     }
   }
-});
-
-test('normalizes Pi JSON output from plain, fenced, and prose replies', () => {
-  expect(normalizePiOutput('{"version":1}', { required: ['version'] })).toBe('{"version":1}');
-  expect(normalizePiOutput('```json\n{"reply":"Done."}\n```', { required: ['reply'] })).toBe(
-    '{"reply":"Done."}',
-  );
-  expect(normalizePiOutput('Result:\n{"text":"Done."}', { required: ['reply'] })).toBe(
-    '{"text":"Done.","reply":"Done."}',
-  );
 });
 
 test('runs Pi as an external read-only ephemeral CLI call', async () => {

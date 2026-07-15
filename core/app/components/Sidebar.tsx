@@ -739,7 +739,7 @@ function HistorySidebar({
             {hasMetadata ? (
               <span className="history-entry-meta">
                 <span className="history-entry-author">
-                  <Avatar fallback={row.author || '?'} size="small" url={row.gravatarUrl} />
+                  <Avatar name={row.author || '?'} size="small" url={row.gravatarUrl} />
                   <span>{row.author}</span>
                 </span>
                 <span>{shortDate(row.committedAt || 0)}</span>

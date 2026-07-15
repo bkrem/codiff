@@ -432,7 +432,6 @@ module.exports = {
   createDefaultConfig,
   getConfigPath,
   initConfig,
-  mergeConfig,
   migrateFromPreferences,
   normalizeCodeFontFamily,
   normalizeCodeFontSize,

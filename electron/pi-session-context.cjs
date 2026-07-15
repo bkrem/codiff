@@ -226,8 +226,4 @@ const readPiSessionContext = async (piSessionId) => {
   };
 };
 
-module.exports = {
-  findPiSessionFile,
-  readPiSessionContext,
-  readSessionMessages,
-};
+module.exports = { readPiSessionContext };

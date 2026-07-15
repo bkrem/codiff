@@ -17,7 +17,7 @@ import {
   isSyntheticWalkthroughHunk,
 } from './narrative-walkthrough-diff.js';
 
-export type NarrativeLineCount = {
+type NarrativeLineCount = {
   added: number;
   deleted: number;
 };
@@ -29,12 +29,12 @@ export type WalkthroughStopView = WalkthroughStop & {
 };
 
 /** A chapter with indexed stops. */
-export type WalkthroughChapterView = Omit<WalkthroughChapter, 'stops'> & {
+type WalkthroughChapterView = Omit<WalkthroughChapter, 'stops'> & {
   stops: ReadonlyArray<WalkthroughStopView>;
 };
 
 /** Support grouped by reason, preserving first-seen order. */
-export type WalkthroughSupportReason = {
+type WalkthroughSupportReason = {
   files: ReadonlyArray<WalkthroughSupportGroup>;
   reason: string;
 };

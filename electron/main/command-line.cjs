@@ -98,35 +98,6 @@ const getReviewProviderMarker = (arg) =>
 /** @param {string} arg */
 const isPullRequestUrlArgument = (arg) => parseReviewUrl(arg) != null;
 
-/** @param {string} value @returns {{owner: string; repo: string} | null} */
-const parseGitHubRemoteUrl = (value) => {
-  const trimmed = value.trim();
-  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i);
-  if (sshMatch) {
-    return {
-      owner: sshMatch[1],
-      repo: sshMatch[2].replace(/\.git$/i, ''),
-    };
-  }
-
-  try {
-    const url = new URL(trimmed);
-    if (url.hostname.toLowerCase() !== 'github.com') {
-      return null;
-    }
-
-    const match = url.pathname.match(/^\/([^/]+)\/(.+?)(?:\.git)?$/);
-    return match
-      ? {
-          owner: match[1],
-          repo: match[2].replace(/\.git$/i, ''),
-        }
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 /** @param {string} repositoryPath @param {number} number */
 const resolvePullRequestUrl = (repositoryPath, number, provider) =>
   resolveReviewUrl(repositoryPath, number, provider);
@@ -451,7 +422,4 @@ module.exports = {
   getCommandLineRepositoryPath,
   getLaunchOptions,
   getLaunchPath,
-  parseCommandLineArguments,
-  parseGitHubRemoteUrl,
-  resolvePullRequestUrl,
 };

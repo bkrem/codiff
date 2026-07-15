@@ -1,23 +1,21 @@
-import { MarkdownEditor, type MarkdownEditorHandle } from '@nkzw/mdx-editor';
-import useRelativeTime from '@nkzw/use-relative-time';
-import { ChatCircleIcon as ChatCircle } from '@phosphor-icons/react/ChatCircle';
 import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { ExternalLink, X } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import {
-  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { Avatar } from './app/components/Avatar.tsx';
+import {
+  MergeRequestCommentsView,
+  SidebarGeneralCommentList,
+  type SharedWalkthroughCommenting,
+} from './app/components/merge-request/GeneralComments.tsx';
 import {
   isTerminalPullRequestMergeState,
   isPullRequestReviewActionDisabled,
@@ -25,7 +23,6 @@ import {
   PullRequestMergeStatusBadge,
   PullRequestReviewButtons,
 } from './app/components/Panels.tsx';
-import { ReadOnlyMarkdownView } from './app/components/ReadOnlyMarkdownView.tsx';
 import {
   PullRequestSourceDescription,
   ReviewCodeView,
@@ -39,24 +36,23 @@ import {
 } from './app/components/walkthrough/NarrativeWalkthroughView.tsx';
 import { useNarrativeNavigation } from './app/components/walkthrough/useNarrativeNavigation.ts';
 import { WalkthroughProgress } from './app/components/walkthrough/WalkthroughProgress.tsx';
+import {
+  CODE_FONT_SIZE_DEFAULT,
+  getCodeFontLineHeight,
+  normalizeCodeFontSizePreference,
+  useDocumentAppearance,
+} from './app/hooks/useDocumentAppearance.ts';
+import { useResizableSidebar } from './app/hooks/useResizableSidebar.ts';
+import { useReviewCommentDrafts } from './app/hooks/useReviewCommentDrafts.ts';
+import { useReviewFileState } from './app/hooks/useReviewState.ts';
 import { createDefaultConfig } from './config/defaults.ts';
-import { matchesShortcut } from './config/keymap.ts';
-import type { CodiffKeymap } from './config/types.ts';
 import { getAgentLabel } from './lib/app-constants.ts';
-import type {
-  CodeViewInstance,
-  ReviewComment,
-  ReviewIdentity,
-  ReviewScrollTarget,
-} from './lib/app-types.ts';
-import { DEFAULT_PADDING } from './lib/code-view-options.ts';
+import type { CodeViewInstance, ReviewComment, ReviewScrollTarget } from './lib/app-types.ts';
 import {
   fileHasVisibleDiff,
   formatTreeLineCount,
   getDiffLineCount,
   getDiffLineCountTitle,
-  getFirstVisibleSection,
-  getItemId,
   getTotalDiffLineCount,
   isMarkdownFilePath,
 } from './lib/diff.ts';
@@ -64,22 +60,12 @@ import { compactPath, fileTreeSort, fuzzyMatches, sortFiles, statusForTree } fro
 import { isNativeInputTarget } from './lib/keyboard.ts';
 import { isGeneratedWalkthroughFile } from './lib/narrative-walkthrough-diff.js';
 import {
-  findReusableReviewCommentDraft,
-  getCommentKey,
   getPendingPullRequestReviewComments,
   getReviewCommentsFromState,
   toPullRequestReviewComment,
 } from './lib/review-comments.ts';
-import {
-  updateReviewIdentityCollapsed,
-  updateReviewIdentityViewed,
-} from './lib/review-identity.ts';
-import {
-  SIDEBAR_DEFAULT_WIDTH,
-  clampSidebarWidth,
-  readSidebarWidth,
-  writeSidebarWidth,
-} from './lib/sidebar-width.ts';
+import { getSelectedPathFromScroll } from './lib/review-scroll.ts';
+import { SIDEBAR_DEFAULT_WIDTH, readSidebarWidth, writeSidebarWidth } from './lib/sidebar-width.ts';
 import { getSourceLabel, getSourceKey } from './lib/source.ts';
 import type {
   ChangedFile,
@@ -92,19 +78,22 @@ import type {
   PullRequestExistingReviewComment,
   PullRequestReviewComment,
   PullRequestReviewEvent,
-  ReviewAuthor,
   RepositoryState,
   SharedWalkthroughSnapshot,
   WalkthroughCommitMessageResult,
   WalkthroughCommitResult,
 } from './types.ts';
 
+export {
+  ReadOnlyGeneralCommentCard,
+  type SharedWalkthroughCommenting,
+} from './app/components/merge-request/GeneralComments.tsx';
+
 const emptyReviewComments: ReadonlyArray<ReviewComment> = [];
 const emptyGeneralCommentThreads: ReadonlyArray<PullRequestGeneralCommentThread> = [];
 const emptyPaths = new Set<string>();
 const emptyWalkthroughNotes = new Map();
 const walkthroughCodeViewBottomInset = 96;
-const CODE_FONT_SIZE_DEFAULT = 13;
 const defaultSharedPreferences: SharedWalkthroughSnapshot['preferences'] = {
   codeFontFamily: 'Fira Code',
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
@@ -125,19 +114,6 @@ const writeSharedSidebarWidth = (width: number) => {
 
 export type MergeRequestWalkthroughStatus = 'failed' | 'generating' | 'idle' | 'ready';
 export type MergeRequestReviewMode = 'comments' | 'tree' | 'walkthrough';
-
-export type SharedWalkthroughCommenting = {
-  canComment: boolean;
-  onDeleteComment: (commentId: string) => Promise<void>;
-  onDeleteGeneralComment: (commentId: string) => Promise<void>;
-  onReplyGeneralComment: (threadId: string, body: string) => Promise<void>;
-  onResolveDiscussion: (discussionId: string, resolved: boolean) => Promise<void>;
-  onSignIn: () => Promise<void> | void;
-  onSubmitComment: (comment: PullRequestReviewComment) => Promise<PullRequestExistingReviewComment>;
-  onSubmitGeneralComment: (body: string) => Promise<void>;
-  onUpdateComment: (commentId: string, body: string) => Promise<void>;
-  onUpdateGeneralComment: (commentId: string, body: string) => Promise<void>;
-};
 
 export type MergeRequestReviewAppProps = {
   externalUrl: string;
@@ -179,11 +155,6 @@ export type MergeRequestReviewAppProps = {
   walkthroughStatus: MergeRequestWalkthroughStatus;
 };
 
-const getCodeFontLineHeight = (size: number) => Math.round((size * 20) / 13);
-
-const normalizeCodeFontSizePreference = (size: number) =>
-  Number.isFinite(size) ? Math.min(32, Math.max(10, Math.round(size))) : CODE_FONT_SIZE_DEFAULT;
-
 const getSnapshotReviewComments = (
   snapshot: SharedWalkthroughSnapshot,
 ): ReadonlyArray<ReviewComment> => {
@@ -203,642 +174,6 @@ const getSnapshotReviewComments = (
 };
 
 const noop = () => {};
-
-const getAuthorDisplayName = (author: ReviewAuthor) => author.name || author.login;
-const getGeneralCommentElementId = (commentId: string) => `general-comment:${commentId}`;
-
-const scrollCommentIntoContainerView = (container: HTMLElement, element: HTMLElement) => {
-  const containerRect = container.getBoundingClientRect();
-  const elementRect = element.getBoundingClientRect();
-  const top =
-    container.scrollTop +
-    elementRect.top -
-    containerRect.top -
-    Math.max(0, (container.clientHeight - elementRect.height) / 2);
-
-  container.scrollTo({
-    behavior: 'smooth',
-    top,
-  });
-};
-const plainTextCommentPattern =
-  /<!--[\s\S]*?-->|<\/?(?:details|summary)\b[^>]*>|```[\s\S]*?```|`([^`]+)`|\[([^\]]+)\]\([^)]+\)|[*_~>#]+/g;
-
-const getCommentPreview = (body: string) => {
-  const preview = body
-    .replaceAll(
-      plainTextCommentPattern,
-      (_, inlineCode: string | undefined, linkText: string | undefined) =>
-        inlineCode ?? linkText ?? ' ',
-    )
-    .replaceAll(/\s+/g, ' ')
-    .trim();
-  return preview || 'Comment';
-};
-
-const formatSubmittedAt = (value: string) => {
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? new Date(time).toLocaleString() : value;
-};
-
-function RelativeSubmittedAtTime({
-  submittedAt,
-  timestamp,
-}: {
-  submittedAt: string;
-  timestamp: number;
-}) {
-  const relativeTime = useRelativeTime(timestamp);
-  return (
-    <time dateTime={submittedAt} title={formatSubmittedAt(submittedAt)}>
-      {relativeTime}
-    </time>
-  );
-}
-
-function SubmittedAtTime({ submittedAt }: { submittedAt: string }) {
-  const timestamp = Date.parse(submittedAt);
-  if (!Number.isFinite(timestamp)) {
-    return (
-      <time dateTime={submittedAt} title={submittedAt}>
-        {submittedAt}
-      </time>
-    );
-  }
-  return <RelativeSubmittedAtTime submittedAt={submittedAt} timestamp={timestamp} />;
-}
-
-export function ReadOnlyGeneralCommentCard({
-  className = '',
-  comment,
-  focused = false,
-}: {
-  className?: string;
-  comment: PullRequestGeneralComment;
-  focused?: boolean;
-}) {
-  const displayName = getAuthorDisplayName(comment.author);
-  const classes = ['review-comment', 'general-comment-card', focused ? 'focused' : '', className]
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <article className={classes} id={getGeneralCommentElementId(comment.id)}>
-      <Avatar fallback={displayName} size="medium" url={comment.author.avatarUrl} />
-      <div className="review-comment-body source-description-body">
-        <div className="review-comment-header read-only general-comment-header">
-          <strong title={`@${comment.author.login}`}>{displayName}</strong>
-          {comment.submittedAt ? <SubmittedAtTime submittedAt={comment.submittedAt} /> : null}
-        </div>
-        <ReadOnlyMarkdownView
-          ariaLabel={`Comment by ${displayName}`}
-          className="review-comment-markdown-editor general-comment-markdown-editor"
-          contentClassName="review-comment-input read-only general-comment-input"
-          fallback={<div className="review-comment-input read-only" />}
-          value={comment.body}
-          variant="embedded"
-        />
-      </div>
-    </article>
-  );
-}
-
-function GeneralCommentCard({
-  comment,
-  editDraft,
-  editError,
-  editing,
-  editSubmitting,
-  focused,
-  keymap,
-  onCancelEdit,
-  onChangeEditDraft,
-  onDelete,
-  onSaveEdit,
-  onStartEdit,
-}: {
-  comment: PullRequestGeneralComment;
-  editDraft: string;
-  editError: string | null;
-  editing: boolean;
-  editSubmitting: boolean;
-  focused: boolean;
-  keymap: CodiffKeymap;
-  onCancelEdit: () => void;
-  onChangeEditDraft: (draft: string) => void;
-  onDelete: (commentId: string) => void;
-  onSaveEdit: () => void;
-  onStartEdit: (comment: PullRequestGeneralComment) => void;
-}) {
-  const displayName = getAuthorDisplayName(comment.author);
-  const canSaveEdit = editing && !editSubmitting && Boolean(editDraft.trim());
-  const editorRef = useRef<MarkdownEditorHandle | null>(null);
-  const handleEditKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (!matchesShortcut(event, keymap, 'submitComment') || !canSaveEdit) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      onSaveEdit();
-    },
-    [canSaveEdit, keymap, onSaveEdit],
-  );
-  const setEditorRef = useCallback(
-    (editor: MarkdownEditorHandle | null) => {
-      editorRef.current = editor;
-      if (editor && editing) {
-        requestAnimationFrame(() => {
-          editor.focus({ defaultSelection: 'rootEnd', preventScroll: true });
-        });
-      }
-    },
-    [editing],
-  );
-
-  useEffect(() => {
-    if (!editing) {
-      return;
-    }
-
-    requestAnimationFrame(() => {
-      editorRef.current?.focus({ defaultSelection: 'rootEnd', preventScroll: true });
-    });
-  }, [editing]);
-
-  return (
-    <article
-      className={`review-comment general-comment-card${focused ? ' focused' : ''}`}
-      id={getGeneralCommentElementId(comment.id)}
-    >
-      <Avatar fallback={displayName} size="medium" url={comment.author.avatarUrl} />
-      <div className="review-comment-body source-description-body">
-        <div
-          className={`review-comment-header read-only general-comment-header${
-            comment.canEdit || comment.canDelete || editing ? ' with-comment-action' : ''
-          }`}
-        >
-          <strong title={`@${comment.author.login}`}>{displayName}</strong>
-          {comment.submittedAt ? <SubmittedAtTime submittedAt={comment.submittedAt} /> : null}
-          {editing ? (
-            <span className="general-comment-edit-actions">
-              <button
-                className="review-comment-action"
-                disabled={editSubmitting}
-                onClick={onCancelEdit}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="review-comment-action"
-                disabled={!canSaveEdit}
-                onClick={onSaveEdit}
-                type="button"
-              >
-                {editSubmitting ? 'Saving' : 'Save'}
-              </button>
-            </span>
-          ) : (
-            <>
-              {comment.canEdit ? (
-                <button
-                  className="review-comment-action"
-                  onClick={() => onStartEdit(comment)}
-                  type="button"
-                >
-                  Edit
-                </button>
-              ) : null}
-              {comment.canDelete ? (
-                <button
-                  aria-label="Delete comment"
-                  className="review-comment-delete"
-                  onClick={() => onDelete(comment.id)}
-                  title="Delete comment"
-                  type="button"
-                >
-                  <X aria-hidden className="review-comment-delete-icon" size={14} />
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
-        {editing ? (
-          <>
-            <Suspense fallback={<div className="review-comment-input" />}>
-              <MarkdownEditor
-                ariaLabel={`Edit comment by ${displayName}`}
-                className="review-comment-markdown-editor general-comment-markdown-editor"
-                colorScheme="inherit"
-                contentClassName="review-comment-input general-comment-input"
-                density="compact"
-                onChange={onChangeEditDraft}
-                onKeyDown={handleEditKeyDown}
-                readOnly={editSubmitting}
-                ref={setEditorRef}
-                spellCheck
-                value={editDraft}
-                variant="embedded"
-              />
-            </Suspense>
-            {editError ? <div className="review-comment-error">{editError}</div> : null}
-          </>
-        ) : (
-          <ReadOnlyMarkdownView
-            ariaLabel={`Comment by ${displayName}`}
-            className="review-comment-markdown-editor general-comment-markdown-editor"
-            contentClassName="review-comment-input read-only general-comment-input"
-            fallback={<div className="review-comment-input read-only" />}
-            value={comment.body}
-            variant="embedded"
-          />
-        )}
-      </div>
-    </article>
-  );
-}
-
-function GeneralCommentThreadCard({
-  canComment,
-  editDraft,
-  editError,
-  editingCommentId,
-  editSubmitting,
-  focusedCommentId,
-  keymap,
-  onCancelEdit,
-  onChangeEditDraft,
-  onDelete,
-  onReply,
-  onResolve,
-  onSaveEdit,
-  onStartEdit,
-  thread,
-}: {
-  canComment: boolean;
-  editDraft: string;
-  editError: string | null;
-  editingCommentId: string | null;
-  editSubmitting: boolean;
-  focusedCommentId: string | null;
-  keymap: CodiffKeymap;
-  onCancelEdit: () => void;
-  onChangeEditDraft: (draft: string) => void;
-  onDelete: (commentId: string) => void;
-  onReply: (threadId: string, body: string) => Promise<void>;
-  onResolve: (threadId: string, resolved: boolean) => Promise<void>;
-  onSaveEdit: () => void;
-  onStartEdit: (comment: PullRequestGeneralComment) => void;
-  thread: PullRequestGeneralCommentThread;
-}) {
-  const [replyDraft, setReplyDraft] = useState('');
-  const [replyError, setReplyError] = useState<string | null>(null);
-  const [replying, setReplying] = useState(false);
-  const [showReply, setShowReply] = useState(false);
-  const [resolving, setResolving] = useState(false);
-  const resolved = thread.isResolved === true;
-  const submitReply = useCallback(() => {
-    const body = replyDraft.trim();
-    if (!body || replying) {
-      return;
-    }
-    setReplyError(null);
-    setReplying(true);
-    void onReply(thread.id, body)
-      .then(() => {
-        setReplyDraft('');
-        setShowReply(false);
-      })
-      .catch((error: unknown) => {
-        setReplyError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => setReplying(false));
-  }, [onReply, replyDraft, replying, thread.id]);
-  const toggleResolved = useCallback(() => {
-    if (resolving) {
-      return;
-    }
-    setResolving(true);
-    void onResolve(thread.id, !resolved)
-      .catch((error: unknown) => {
-        window.alert(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => setResolving(false));
-  }, [onResolve, resolved, resolving, thread.id]);
-
-  return (
-    <section className="general-comment-thread">
-      {thread.comments.map((comment) => (
-        <GeneralCommentCard
-          comment={comment}
-          editDraft={editDraft}
-          editError={editingCommentId === comment.id ? editError : null}
-          editing={editingCommentId === comment.id}
-          editSubmitting={editSubmitting && editingCommentId === comment.id}
-          focused={comment.id === focusedCommentId}
-          key={comment.id}
-          keymap={keymap}
-          onCancelEdit={onCancelEdit}
-          onChangeEditDraft={onChangeEditDraft}
-          onDelete={onDelete}
-          onSaveEdit={onSaveEdit}
-          onStartEdit={onStartEdit}
-        />
-      ))}
-      {thread.canReply && canComment && !resolved ? (
-        showReply ? (
-          <GeneralCommentComposer
-            disabled={false}
-            draft={replyDraft}
-            error={replyError}
-            gitIdentity={null}
-            keymap={keymap}
-            onChangeDraft={setReplyDraft}
-            onSubmit={submitReply}
-            submitting={replying}
-          />
-        ) : (
-          <div className="review-comment-thread-footer">
-            <button
-              className="review-comment-action"
-              onClick={() => setShowReply(true)}
-              type="button"
-            >
-              Reply
-            </button>
-          </div>
-        )
-      ) : null}
-      {thread.canResolve ? (
-        <div className="review-comment-thread-footer">
-          <button
-            className="review-comment-action"
-            disabled={resolving}
-            onClick={toggleResolved}
-            type="button"
-          >
-            {resolving ? 'Saving' : resolved ? 'Reopen' : 'Resolve'}
-          </button>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function SidebarGeneralCommentList({
-  comments,
-  focusedCommentId,
-  onActivateComment,
-}: {
-  comments: ReadonlyArray<PullRequestGeneralComment>;
-  focusedCommentId: string | null;
-  onActivateComment: (commentId: string) => void;
-}) {
-  if (comments.length === 0) {
-    return (
-      <div className="sidebar-comments-empty">
-        <strong>No comments yet</strong>
-        <span>Start the discussion in the main panel.</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="history-list sidebar-comment-list">
-      {comments.map((comment, index) => {
-        const displayName = getAuthorDisplayName(comment.author);
-        const selected = comment.id === focusedCommentId;
-        return (
-          <button
-            aria-current={selected ? 'true' : undefined}
-            className={`history-entry sidebar-comment-entry with-metadata${selected ? ' selected' : ''}`}
-            key={comment.id}
-            onClick={() => onActivateComment(comment.id)}
-            title={comment.body}
-            type="button"
-          >
-            <span className="history-entry-ref">#{index + 1}</span>
-            <span className="history-entry-subject">{getCommentPreview(comment.body)}</span>
-            <span className="history-entry-meta">
-              <span className="history-entry-author">
-                <Avatar fallback={displayName} size="small" url={comment.author.avatarUrl} />
-                <span>{displayName}</span>
-              </span>
-              {comment.submittedAt ? <SubmittedAtTime submittedAt={comment.submittedAt} /> : null}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function GeneralCommentComposer({
-  disabled,
-  draft,
-  error,
-  gitIdentity,
-  keymap,
-  onChangeDraft,
-  onSubmit,
-  submitting,
-}: {
-  disabled: boolean;
-  draft: string;
-  error: string | null;
-  gitIdentity: GitIdentity | null;
-  keymap: CodiffKeymap;
-  onChangeDraft: (draft: string) => void;
-  onSubmit: () => void;
-  submitting: boolean;
-}) {
-  const canSubmit = !disabled && !submitting && Boolean(draft.trim());
-  const handleKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (!matchesShortcut(event, keymap, 'submitComment') || !canSubmit) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      onSubmit();
-    },
-    [canSubmit, keymap, onSubmit],
-  );
-  return (
-    <section className="review-comment-thread general-comment-composer">
-      <div className="review-comment">
-        <Avatar
-          fallback={gitIdentity?.name || gitIdentity?.email || 'You'}
-          size="medium"
-          url={gitIdentity?.gravatarUrl}
-        />
-        <div className="review-comment-body">
-          <div className="review-comment-header general-comment-header general-comment-composer-header">
-            <strong>{gitIdentity?.name || gitIdentity?.email || 'You'}</strong>
-            <button
-              className="review-comment-action"
-              disabled={!canSubmit}
-              onClick={onSubmit}
-              title={canSubmit ? 'Submit comment' : 'Write a comment before commenting'}
-              type="button"
-            >
-              <ChatCircle aria-hidden className="review-comment-action-icon" size={14} />
-              {submitting ? 'Sending' : 'Comment'}
-            </button>
-          </div>
-          <Suspense fallback={<div className="review-comment-input" />}>
-            <MarkdownEditor
-              ariaLabel="Add comment"
-              className="review-comment-markdown-editor"
-              colorScheme="inherit"
-              contentClassName="review-comment-input"
-              density="compact"
-              onChange={onChangeDraft}
-              onKeyDown={handleKeyDown}
-              placeholder="Write a comment…"
-              readOnly={disabled || submitting}
-              spellCheck
-              value={draft}
-              variant="embedded"
-            />
-          </Suspense>
-          {error ? <div className="review-comment-error">{error}</div> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MergeRequestCommentsView({
-  canComment,
-  commenting,
-  draft,
-  editDraft,
-  editError,
-  editingCommentId,
-  editSubmitting,
-  error,
-  focusedCommentId,
-  focusedCommentRequest,
-  gitIdentity,
-  keymap,
-  onCancelEdit,
-  onChangeDraft,
-  onChangeEditDraft,
-  onSaveEdit,
-  onStartEdit,
-  onSubmit,
-  sourceDescription,
-  submitting,
-  threads,
-}: {
-  canComment: boolean;
-  commenting?: SharedWalkthroughCommenting;
-  draft: string;
-  editDraft: string;
-  editError: string | null;
-  editingCommentId: string | null;
-  editSubmitting: boolean;
-  error: string | null;
-  focusedCommentId: string | null;
-  focusedCommentRequest: number;
-  gitIdentity: GitIdentity | null;
-  keymap: CodiffKeymap;
-  onCancelEdit: () => void;
-  onChangeDraft: (draft: string) => void;
-  onChangeEditDraft: (draft: string) => void;
-  onSaveEdit: () => void;
-  onStartEdit: (comment: PullRequestGeneralComment) => void;
-  onSubmit: () => void;
-  sourceDescription?: ReactNode;
-  submitting: boolean;
-  threads: ReadonlyArray<PullRequestGeneralCommentThread>;
-}) {
-  const commentsRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (focusedCommentId == null) {
-      return;
-    }
-
-    const container = commentsRef.current;
-    const element = document.getElementById(getGeneralCommentElementId(focusedCommentId));
-    if (!container || !element) {
-      return;
-    }
-
-    scrollCommentIntoContainerView(container, element);
-  }, [focusedCommentId, focusedCommentRequest]);
-
-  return (
-    <div className="merge-request-comments-view" ref={commentsRef}>
-      {sourceDescription ? (
-        <div className="merge-request-comments-source-description">{sourceDescription}</div>
-      ) : null}
-      {threads.length > 0 ? (
-        <div className="general-comment-list">
-          {threads.map((thread) => (
-            <GeneralCommentThreadCard
-              canComment={canComment}
-              editDraft={editDraft}
-              editError={editError}
-              editingCommentId={editingCommentId}
-              editSubmitting={editSubmitting}
-              focusedCommentId={focusedCommentId}
-              key={thread.id}
-              keymap={keymap}
-              onCancelEdit={onCancelEdit}
-              onChangeEditDraft={onChangeEditDraft}
-              onDelete={(commentId) => {
-                void commenting?.onDeleteGeneralComment(commentId).catch((error: unknown) => {
-                  window.alert(error instanceof Error ? error.message : String(error));
-                });
-              }}
-              onReply={(threadId, body) =>
-                commenting?.onReplyGeneralComment(threadId, body) ??
-                Promise.reject(new Error('Replying is unavailable.'))
-              }
-              onResolve={(threadId, resolved) =>
-                commenting?.onResolveDiscussion(threadId, resolved) ??
-                Promise.reject(new Error('Resolving is unavailable.'))
-              }
-              onSaveEdit={onSaveEdit}
-              onStartEdit={onStartEdit}
-              thread={thread}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="empty-state">
-          <div className="empty-panel squircle">
-            <strong>No comments yet</strong>
-            <span>Add a comment to start the discussion.</span>
-          </div>
-        </div>
-      )}
-      {canComment ? (
-        <GeneralCommentComposer
-          disabled={false}
-          draft={draft}
-          error={error}
-          gitIdentity={gitIdentity}
-          keymap={keymap}
-          onChangeDraft={onChangeDraft}
-          onSubmit={onSubmit}
-          submitting={submitting}
-        />
-      ) : commenting ? (
-        <div className="general-comment-sign-in">
-          <button className="codiff-open-button" onClick={commenting.onSignIn} type="button">
-            Sign in with GitLab to comment
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 const disabledCommit = async (): Promise<WalkthroughCommitResult> => ({
   reason: 'Shared walkthroughs are read-only.',
@@ -1049,21 +384,30 @@ function ReviewSurface({
     `${snapshot.repository.root}:${getSourceKey(snapshot.repository.source)}`,
   );
   const keymap = useMemo(() => createDefaultConfig().keymap, []);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
-  const [expandedGenerated, setExpandedGenerated] = useState<ReadonlySet<string>>(() => new Set());
   const [fileSearchQuery, setFileSearchQuery] = useState('');
-  const [itemVersionByKey, setItemVersionByKey] = useState<Record<string, number>>({});
-  const [selectedPath, setSelectedPath] = useState<string | null>(
-    () => snapshot.files[0]?.path ?? null,
-  );
-  const [sidebarWidth, setSidebarWidth] = useState(readSharedSidebarWidth);
   const [uncontrolledSidebarMode, setUncontrolledSidebarMode] = useState<MergeRequestReviewMode>(
     () => initialMode ?? (interactive ? 'tree' : 'walkthrough'),
   );
   const isSidebarModeControlled = Boolean(initialMode && onModeChange);
   const sidebarMode = isSidebarModeControlled ? initialMode : uncontrolledSidebarMode;
   const [treeScrollTarget, setTreeScrollTarget] = useState<ReviewScrollTarget | null>(null);
-  const [viewed, setViewed] = useState<Record<string, string>>({});
+  const {
+    bumpItemVersion,
+    collapsed,
+    expandedGenerated,
+    itemVersionByKey,
+    selectedPath,
+    setSelectedPath,
+    toggleCollapsed,
+    toggleViewed,
+    viewed,
+  } = useReviewFileState({
+    initialSelectedPath: snapshot.files[0]?.path ?? null,
+  });
+  const { resizeSidebar, sidebarWidth } = useResizableSidebar({
+    onWidthCommit: writeSharedSidebarWidth,
+    readWidth: readSharedSidebarWidth,
+  });
   const snapshotReviewComments = useMemo(() => getSnapshotReviewComments(snapshot), [snapshot]);
   const [editedReviewCommentBodies, setEditedReviewCommentBodies] = useState<
     Readonly<Record<string, string>>
@@ -1084,7 +428,23 @@ function ReviewSurface({
     () => [...visibleSnapshotReviewComments, ...localReviewComments],
     [localReviewComments, visibleSnapshotReviewComments],
   );
-  const reviewCommentsRef = useRef(reviewComments);
+  const {
+    activeReviewCommentDraftRef,
+    activeReviewCommentDraftState,
+    clearCommentFocus,
+    createComment,
+    deleteComment: deleteLocalComment,
+    focusCommentId,
+    focusCommentRequest,
+    reviewCommentsRef,
+    updateActiveReviewCommentDraft,
+    updateComment,
+  } = useReviewCommentDrafts({
+    canCreateComment: canComment,
+    comments: reviewComments,
+    onCommentFileChange: bumpItemVersion,
+    setComments: setLocalReviewComments,
+  });
   const generalCommentThreads = snapshot.repository.generalComments ?? emptyGeneralCommentThreads;
   const generalComments = useMemo(
     () =>
@@ -1103,12 +463,6 @@ function ReviewSurface({
   const [focusedGeneralCommentId, setFocusedGeneralCommentId] = useState<string | null>(null);
   const [generalCommentScrollRequest, setGeneralCommentScrollRequest] = useState(0);
   const [generalCommentSubmitting, setGeneralCommentSubmitting] = useState(false);
-  const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
-  const [focusCommentRequest, setFocusCommentRequest] = useState(0);
-  const [activeReviewCommentDraftState, setActiveReviewCommentDraftState] = useState<Pick<
-    ReviewComment,
-    'body' | 'id'
-  > | null>(null);
   const [pullRequestReviewSubmitting, setPullRequestReviewSubmitting] =
     useState<PullRequestReviewEvent | null>(null);
   const [pullRequestCloseSubmitting, setPullRequestCloseSubmitting] = useState(false);
@@ -1116,12 +470,7 @@ function ReviewSurface({
   const [walkthroughRequestPending, setWalkthroughRequestPending] = useState(false);
   const walkthroughRequestPendingRef = useRef(false);
   const [walkthroughRequestId, setWalkthroughRequestId] = useState(0);
-  const activeReviewCommentDraftRef = useRef<Pick<ReviewComment, 'body' | 'id'> | null>(null);
   const interactiveRef = useRef(interactive);
-
-  useEffect(() => {
-    reviewCommentsRef.current = reviewComments;
-  }, [reviewComments]);
 
   const visibleFiles = useMemo(
     () =>
@@ -1160,34 +509,12 @@ function ReviewSurface({
     );
   }, [snapshot.files]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (snapshot.preferences.theme === 'system') {
-      root.removeAttribute('data-theme');
-    } else {
-      root.setAttribute('data-theme', snapshot.preferences.theme);
-    }
-  }, [snapshot.preferences.theme]);
+  useDocumentAppearance({
+    codeFontFamily: snapshot.preferences.codeFontFamily,
+    codeFontSize: snapshot.preferences.codeFontSize,
+    theme: snapshot.preferences.theme,
+  });
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const codeFontFamily = snapshot.preferences.codeFontFamily.trim();
-    const codeFontSize = normalizeCodeFontSizePreference(snapshot.preferences.codeFontSize);
-
-    if (codeFontFamily) {
-      root.style.setProperty('--font-diff-mono', `${JSON.stringify(codeFontFamily)}, monospace`);
-    }
-
-    root.style.setProperty('--font-diff-size', `${codeFontSize}px`);
-    root.style.setProperty('--font-diff-line-height', `${getCodeFontLineHeight(codeFontSize)}px`);
-  }, [snapshot.preferences.codeFontFamily, snapshot.preferences.codeFontSize]);
-
-  const bumpItemVersion = useCallback((key: string) => {
-    setItemVersionByKey((current) => ({
-      ...current,
-      [key]: (current[key] ?? 0) + 1,
-    }));
-  }, []);
   const changeSidebarMode = useCallback(
     (mode: MergeRequestReviewMode) => {
       setUncontrolledSidebarMode(mode);
@@ -1196,54 +523,6 @@ function ReviewSurface({
     [onModeChange],
   );
 
-  const createComment = useCallback(
-    (comment: Omit<ReviewComment, 'body' | 'id'>) => {
-      if (!canComment) {
-        return;
-      }
-
-      const emptyExistingComment = reviewCommentsRef.current.find(
-        (candidate) =>
-          candidate.body.length === 0 && getCommentKey(candidate) === getCommentKey(comment),
-      );
-      if (emptyExistingComment) {
-        setFocusCommentId(emptyExistingComment.id);
-        setFocusCommentRequest((current) => current + 1);
-        return;
-      }
-
-      const emptyDraft = findReusableReviewCommentDraft(
-        reviewCommentsRef.current,
-        activeReviewCommentDraftRef.current,
-      );
-      if (emptyDraft) {
-        const id = crypto.randomUUID();
-        setFocusCommentId(id);
-        setFocusCommentRequest((current) => current + 1);
-        setLocalReviewComments((current) =>
-          current.map((candidate) =>
-            candidate.id === emptyDraft.id
-              ? {
-                  ...comment,
-                  body: '',
-                  id,
-                }
-              : candidate,
-          ),
-        );
-        bumpItemVersion(emptyDraft.filePath);
-        bumpItemVersion(comment.filePath);
-        return;
-      }
-
-      const id = crypto.randomUUID();
-      setFocusCommentId(id);
-      setFocusCommentRequest((current) => current + 1);
-      setLocalReviewComments((current) => [...current, { ...comment, body: '', id }]);
-      bumpItemVersion(comment.filePath);
-    },
-    [bumpItemVersion, canComment],
-  );
   const activateGeneralComment = useCallback(
     (commentId: string) => {
       changeSidebarMode('comments');
@@ -1275,31 +554,6 @@ function ReviewSurface({
     },
     [activateGeneralComment, focusedGeneralCommentId, generalComments],
   );
-  const updateComment = useCallback((commentId: string, body: string) => {
-    const applyCommentBody = (comments: ReadonlyArray<ReviewComment>) =>
-      comments.map((comment) =>
-        comment.id === commentId && !comment.isReadOnly ? { ...comment, body } : comment,
-      );
-
-    reviewCommentsRef.current = applyCommentBody(reviewCommentsRef.current);
-    setLocalReviewComments(applyCommentBody);
-  }, []);
-  const updateActiveReviewCommentDraft = useCallback(
-    (comment: Pick<ReviewComment, 'body' | 'id'> | null) => {
-      activeReviewCommentDraftRef.current = comment;
-      setActiveReviewCommentDraftState((current) => {
-        if (comment == null) {
-          return current == null ? current : null;
-        }
-
-        const body = comment.body.trim().length > 0 ? 'pending' : '';
-        return current?.id === comment.id && current.body === body
-          ? current
-          : { body, id: comment.id };
-      });
-    },
-    [],
-  );
   const updateExistingReviewComment = useCallback(
     async (commentId: string, body: string) => {
       if (!updateReviewComment) {
@@ -1312,27 +566,21 @@ function ReviewSurface({
         bumpItemVersion(comment.filePath);
       }
     },
-    [bumpItemVersion, updateReviewComment],
+    [bumpItemVersion, reviewCommentsRef, updateReviewComment],
   );
   const deleteComment = useCallback(
     (commentId: string) => {
       const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
-      updateActiveReviewCommentDraft(null);
       if (comment?.isReadOnly && comment.canDelete && commenting?.onDeleteComment) {
+        updateActiveReviewCommentDraft(null);
         void commenting.onDeleteComment(commentId).catch((error: unknown) => {
           window.alert(error instanceof Error ? error.message : String(error));
         });
         return;
       }
-      setFocusCommentId((current) => (current === commentId ? null : current));
-      setLocalReviewComments((current) =>
-        current.filter((candidate) => candidate.id !== commentId),
-      );
-      if (comment) {
-        bumpItemVersion(comment.filePath);
-      }
+      deleteLocalComment(commentId);
     },
-    [bumpItemVersion, commenting, updateActiveReviewCommentDraft],
+    [commenting, deleteLocalComment, reviewCommentsRef, updateActiveReviewCommentDraft],
   );
   const submitComment = useCallback(
     (commentId: string) => {
@@ -1357,7 +605,7 @@ function ReviewSurface({
       );
       void submitReviewComment(toPullRequestReviewComment(comment))
         .then(() => {
-          setFocusCommentId((current) => (current === commentId ? null : current));
+          clearCommentFocus(commentId);
           setLocalReviewComments((current) =>
             current.filter((candidate) => candidate.id !== commentId),
           );
@@ -1380,7 +628,13 @@ function ReviewSurface({
           bumpItemVersion(comment.filePath);
         });
     },
-    [bumpItemVersion, submitReviewComment, updateActiveReviewCommentDraft],
+    [
+      bumpItemVersion,
+      clearCommentFocus,
+      reviewCommentsRef,
+      submitReviewComment,
+      updateActiveReviewCommentDraft,
+    ],
   );
   const submitReview = useCallback(
     (event: PullRequestReviewEvent, body?: string) => {
@@ -1424,6 +678,8 @@ function ReviewSurface({
       interactive,
       pullRequestReviewSubmitting,
       snapshot.repository.source,
+      activeReviewCommentDraftRef,
+      reviewCommentsRef,
       updateActiveReviewCommentDraft,
     ],
   );
@@ -1601,126 +857,30 @@ function ReviewSurface({
     generalCommentEditSubmitting,
     updateGeneralDiscussion,
   ]);
-  const resizeSidebar = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-
-    const handle = event.currentTarget;
-    const shell = handle.parentElement;
-    if (!shell) {
-      return;
-    }
-
-    const shellLeft = shell.getBoundingClientRect().left;
-    handle.setPointerCapture(event.pointerId);
-    handle.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-
-    const cleanup = () => {
-      handle.releasePointerCapture(event.pointerId);
-      handle.removeEventListener('pointermove', handleMove);
-      handle.removeEventListener('pointerup', handleEnd);
-      handle.removeEventListener('pointercancel', handleEnd);
-      handle.classList.remove('dragging');
-      document.body.style.cursor = '';
-    };
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      setSidebarWidth(clampSidebarWidth(moveEvent.clientX - shellLeft));
-    };
-
-    const handleEnd = () => {
-      cleanup();
-      setSidebarWidth((width) => {
-        writeSharedSidebarWidth(width);
-        return width;
-      });
-    };
-
-    handle.addEventListener('pointermove', handleMove);
-    handle.addEventListener('pointerup', handleEnd);
-    handle.addEventListener('pointercancel', handleEnd);
-  }, []);
-
-  const toggleCollapsed = useCallback(
-    (file: ChangedFile, isCollapsed: boolean, reviewKey: string) => {
-      setCollapsed((current) => {
-        const next = new Set(current);
-        if (isCollapsed) {
-          next.delete(reviewKey);
-        } else {
-          next.add(reviewKey);
-        }
-        return next;
-      });
-      setExpandedGenerated((current) => {
-        const next = new Set(current);
-        if (isCollapsed && isGeneratedWalkthroughFile(file)) {
-          next.add(reviewKey);
-        } else {
-          next.delete(reviewKey);
-        }
-        return next;
-      });
-      bumpItemVersion(reviewKey);
+  const activateTreePath = useCallback(
+    (path: string) => {
+      setSelectedPath(path);
+      setTreeScrollTarget((current) => ({
+        behavior: 'smooth',
+        path,
+        request: (current?.request ?? 0) + 1,
+      }));
     },
-    [bumpItemVersion],
+    [setSelectedPath],
   );
-  const toggleViewed = useCallback(
-    (_file: ChangedFile, isViewed: boolean, reviewIdentity: ReviewIdentity) => {
-      setViewed((current) => updateReviewIdentityViewed(current, reviewIdentity, isViewed));
-      setCollapsed((current) => updateReviewIdentityCollapsed(current, reviewIdentity, isViewed));
-      if (!isViewed) {
-        setExpandedGenerated((current) => {
-          const next = new Set(current);
-          next.delete(reviewIdentity.key);
-          return next;
-        });
-      }
-      bumpItemVersion(reviewIdentity.key);
-    },
-    [bumpItemVersion],
-  );
-  const activateTreePath = useCallback((path: string) => {
-    setSelectedPath(path);
-    setTreeScrollTarget((current) => ({
-      behavior: 'smooth',
-      path,
-      request: (current?.request ?? 0) + 1,
-    }));
-  }, []);
   const updateSelectedPathFromScroll = useCallback(
     (viewer: CodeViewInstance) => {
-      if (visibleFiles.length === 0) {
-        return;
-      }
-
-      const activationTop = viewer.getScrollTop() + DEFAULT_PADDING;
-      let nextPath = visibleFiles[0]?.path ?? null;
-      let nextDistance = Number.NEGATIVE_INFINITY;
-
-      for (const file of visibleFiles) {
-        const section = getFirstVisibleSection(file, snapshot.preferences.showWhitespace);
-        const itemTop = section ? viewer.getTopForItem(getItemId(section)) : undefined;
-        if (itemTop == null) {
-          continue;
-        }
-
-        const distance = itemTop - activationTop;
-        if (distance <= 0 && distance > nextDistance) {
-          nextDistance = distance;
-          nextPath = file.path;
-        }
-      }
+      const nextPath = getSelectedPathFromScroll(
+        viewer,
+        visibleFiles,
+        snapshot.preferences.showWhitespace,
+      );
 
       if (nextPath) {
         setSelectedPath((current) => (current === nextPath ? current : nextPath));
       }
     },
-    [snapshot.preferences.showWhitespace, visibleFiles],
+    [setSelectedPath, snapshot.preferences.showWhitespace, visibleFiles],
   );
 
   const diffLineHeight = getCodeFontLineHeight(

@@ -165,10 +165,4 @@ const readReviewAssistantReply = async (state, request, agent, agentOptions) => 
   }
 };
 
-module.exports = {
-  buildReviewAssistantInput,
-  buildReviewAssistantPrompt,
-  normalizeReviewAssistantReply,
-  readReviewAssistantReply,
-  reviewAssistantSchema,
-};
+module.exports = { readReviewAssistantReply };

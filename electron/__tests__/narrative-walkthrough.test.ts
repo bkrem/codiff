@@ -6,9 +6,6 @@ const require = createRequire(import.meta.url);
 const {
   buildNarrativeWalkthroughPrompt,
   getNarrativeWalkthroughCacheKey,
-  getNarrativeWalkthroughTimeoutMs,
-  LARGE_WALKTHROUGH_HUNK_THRESHOLD,
-  narrativeWalkthroughResponseSchema,
   narrativeWalkthroughSchema,
   normalizeNarrativeWalkthrough,
   readNarrativeWalkthrough,
@@ -28,13 +25,6 @@ const {
     context?: unknown,
     customPrompt?: string,
   ) => string;
-  getNarrativeWalkthroughTimeoutMs: (state: any, minimumMs?: number) => number;
-  LARGE_WALKTHROUGH_HUNK_THRESHOLD: number;
-  narrativeWalkthroughResponseSchema: {
-    properties: Record<string, any>;
-    required: ReadonlyArray<string>;
-    type: string;
-  };
   narrativeWalkthroughSchema: {
     properties: Record<string, any>;
     required: ReadonlyArray<string>;
@@ -110,6 +100,7 @@ const files = [
 test('reports only the long-running walkthrough generation phases', async () => {
   const phases: Array<string> = [];
   let runOptions: any;
+  let runSchema: any;
   const state = {
     branch: 'main',
     files,
@@ -125,12 +116,13 @@ test('reports only the long-running walkthrough generation phases', async () => 
     run: async (
       _root: string,
       _prompt: string,
-      _schema: unknown,
+      schema: unknown,
       _outputName: string,
       _timeoutMessage: string,
       options: unknown,
     ) => {
       runOptions = options;
+      runSchema = schema;
       return JSON.stringify({
         ...baseInput(),
         chapters: [
@@ -183,6 +175,35 @@ test('reports only the long-running walkthrough generation phases', async () => 
 
   expect(phases).toEqual(['agent-generation', 'response-received']);
   expect(runOptions.reasoningEffort).toBeUndefined();
+  expect(runOptions.timeoutMs).toBe(90_000);
+  expect(runSchema.required).toEqual(Object.keys(runSchema.properties));
+  expect(runSchema.properties.agent).toBeUndefined();
+  expect(runSchema.properties.generatedAt).toBeUndefined();
+  expect(runSchema.properties.meta).toBeUndefined();
+  expect(runSchema.properties.repo).toBeUndefined();
+  expect(runSchema.properties.source).toBeUndefined();
+  expect(runSchema.properties.support).toBeUndefined();
+  expect(runSchema.properties.commit.required).toEqual(['body', 'title']);
+  expect(runSchema.properties.commit.type).toContain('null');
+
+  const chapters = runSchema.properties.chapters;
+  const stopProperties = chapters.items.properties.stops.items.properties;
+  expect(chapters.maxItems).toBe(6);
+  expect(chapters.items.properties.title.maxLength).toBe(16);
+  expect(chapters.items.properties.stops.maxItems).toBe(14);
+  expect(stopProperties.added).toBeUndefined();
+  expect(stopProperties.deleted).toBeUndefined();
+  expect(stopProperties.path).toBeUndefined();
+  expect(stopProperties.status).toBeUndefined();
+  expect(stopProperties.changeType).toBeUndefined();
+  expect(stopProperties.commitNote).toBeUndefined();
+  expect(stopProperties.notes).toBeUndefined();
+  expect(stopProperties.summary).toBeUndefined();
+  expect(stopProperties.title.maxLength).toBe(80);
+  expect(chapters.items.properties.stops.items.required).toContain('title');
+  expect(stopProperties.hunkIds.minItems).toBe(1);
+  expect(stopProperties.hunkIds.maxItems).toBe(14);
+  expect(stopProperties.comments).toBeUndefined();
 });
 
 const baseInput = () => ({
@@ -235,37 +256,65 @@ test('keeps the renderer JSON schema in sync with the live narrative schema', ()
   expect(narrativeSchemaJson).toEqual(narrativeWalkthroughSchema);
 });
 
-test('derives an OpenAI strict-compatible response schema', () => {
-  expect(narrativeWalkthroughResponseSchema.required).toEqual(
-    Object.keys(narrativeWalkthroughResponseSchema.properties),
-  );
-  expect(narrativeWalkthroughResponseSchema.properties.agent).toBeUndefined();
-  expect(narrativeWalkthroughResponseSchema.properties.generatedAt).toBeUndefined();
-  expect(narrativeWalkthroughResponseSchema.properties.meta).toBeUndefined();
-  expect(narrativeWalkthroughResponseSchema.properties.repo).toBeUndefined();
-  expect(narrativeWalkthroughResponseSchema.properties.source).toBeUndefined();
-  expect(narrativeWalkthroughResponseSchema.properties.commit.required).toEqual(['body', 'title']);
-  expect(narrativeWalkthroughResponseSchema.properties.commit.type).toContain('null');
-  expect(narrativeWalkthroughResponseSchema.properties.support).toBeUndefined();
+test('scales walkthrough timeouts passed to the agent', async () => {
+  const createState = (count: number) => ({
+    branch: 'main',
+    files: Array.from({ length: count }, (_, index) => ({
+      path: `file-${index}.ts`,
+      sections: [
+        {
+          id: `file-${index}.ts:staged`,
+          kind: 'staged',
+          patch: `@@ -1 +1 @@\n-old ${index}\n+new ${index}\n`,
+        },
+      ],
+      status: 'modified',
+    })),
+    generatedAt: 1,
+    root: '/repo',
+    source: { type: 'working-tree' },
+  });
+  const readTimeout = async (count: number, defaultTimeoutMs: number) => {
+    let timeoutMs = 0;
+    await readNarrativeWalkthrough(
+      createState(count),
+      {
+        defaultTimeoutMs,
+        id: 'codex',
+        isNotFoundError: () => false,
+        label: 'Codex',
+        run: async (
+          _root: string,
+          _prompt: string,
+          _schema: unknown,
+          _outputName: string,
+          _timeoutMessage: string,
+          options: { timeoutMs: number },
+        ) => {
+          timeoutMs = options.timeoutMs;
+          return JSON.stringify({
+            chapters: [],
+            focus: 'Review the change.',
+            kind: 'narrative',
+            title: 'Review',
+            version: 4,
+          });
+        },
+      },
+      {},
+    );
+    return timeoutMs;
+  };
 
-  const chapters = narrativeWalkthroughResponseSchema.properties.chapters;
-  const stopProperties = chapters.items.properties.stops.items.properties;
-  expect(chapters.maxItems).toBe(6);
-  expect(chapters.items.properties.title.maxLength).toBe(16);
-  expect(chapters.items.properties.stops.maxItems).toBe(14);
-  expect(stopProperties.added).toBeUndefined();
-  expect(stopProperties.deleted).toBeUndefined();
-  expect(stopProperties.path).toBeUndefined();
-  expect(stopProperties.status).toBeUndefined();
-  expect(stopProperties.changeType).toBeUndefined();
-  expect(stopProperties.commitNote).toBeUndefined();
-  expect(stopProperties.notes).toBeUndefined();
-  expect(stopProperties.summary).toBeUndefined();
-  expect(stopProperties.title.maxLength).toBe(80);
-  expect(chapters.items.properties.stops.items.required).toContain('title');
-  expect(stopProperties.hunkIds.minItems).toBe(1);
-  expect(stopProperties.hunkIds.maxItems).toBe(14);
-  expect(stopProperties.comments).toBeUndefined();
+  const smallTimeout = await readTimeout(4, 90_000);
+  const mediumTimeout = await readTimeout(32, 90_000);
+  const largeTimeout = await readTimeout(100, 90_000);
+
+  expect(smallTimeout).toBe(90_000);
+  expect(mediumTimeout).toBeGreaterThan(smallTimeout);
+  expect(mediumTimeout).toBeLessThan(300_000);
+  expect(largeTimeout).toBe(300_000);
+  expect(await readTimeout(4, 180_000)).toBe(180_000);
 });
 
 test('prompts generated walkthroughs to use deterministic hunk groups', () => {
@@ -337,36 +386,6 @@ test('prompts small walkthroughs to group similar hunks into compact chapters', 
   expect(prompt).toContain('Similar same-file hunks should usually be one stop');
 });
 
-test('scales walkthrough timeouts with reviewable files and hunks', () => {
-  const createState = (count: number) => ({
-    branch: 'main',
-    files: Array.from({ length: count }, (_, index) => ({
-      path: `file-${index}.ts`,
-      sections: [
-        {
-          id: `file-${index}.ts:staged`,
-          kind: 'staged',
-          patch: `@@ -1 +1 @@\n-old ${index}\n+new ${index}\n`,
-        },
-      ],
-      status: 'modified',
-    })),
-    generatedAt: 1,
-    root: '/repo',
-    source: { type: 'working-tree' },
-  });
-
-  const smallTimeout = getNarrativeWalkthroughTimeoutMs(createState(4));
-  const mediumTimeout = getNarrativeWalkthroughTimeoutMs(createState(32));
-  const largeTimeout = getNarrativeWalkthroughTimeoutMs(createState(100));
-
-  expect(smallTimeout).toBe(90_000);
-  expect(mediumTimeout).toBeGreaterThan(smallTimeout);
-  expect(mediumTimeout).toBeLessThan(300_000);
-  expect(largeTimeout).toBe(300_000);
-  expect(getNarrativeWalkthroughTimeoutMs(createState(4), 180_000)).toBe(180_000);
-});
-
 test('uses GPT-5.5 for large walkthroughs only when Codex is on the default model', () => {
   const createState = (hunkCount: number) => ({
     branch: 'main',
@@ -397,7 +416,6 @@ test('uses GPT-5.5 for large walkthroughs only when Codex is on the default mode
     normalizeModel: (model: unknown) => String(model),
   };
 
-  expect(LARGE_WALKTHROUGH_HUNK_THRESHOLD).toBe(100);
   expect(resolveNarrativeWalkthroughModel(createState(99), codexAgent, 'gpt-5.6-terra')).toBe(
     'gpt-5.6-terra',
   );

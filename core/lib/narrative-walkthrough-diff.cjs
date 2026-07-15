@@ -287,89 +287,13 @@ const getSectionWalkthroughHunks = (file, section) => {
     : [];
 };
 
-/** @param {string} sectionId @param {string} hunkId */
-const getHunkOrdinal = (sectionId, hunkId) => {
-  const prefix = `${sectionId}:h`;
-  if (!hunkId.startsWith(prefix)) {
-    return null;
-  }
-  const ordinal = Number(hunkId.slice(prefix.length));
-  return Number.isInteger(ordinal) && ordinal > 0 ? ordinal : null;
-};
-
-/**
- * @param {string} patch
- * @param {string} sectionId
- * @param {ReadonlyArray<string>} hunkIds
- */
-const filterPatchToHunkIds = (patch, sectionId, hunkIds) => {
-  if (typeof patch !== 'string' || patch.trim().length === 0 || hunkIds.length === 0) {
-    return null;
-  }
-
-  const patchLines = patch.split('\n');
-  const headerLines = [];
-  const hunkLinesByOrdinal = new Map();
-  let index = 0;
-  let foundHunk = false;
-  let ordinal = 0;
-
-  while (index < patchLines.length) {
-    const parsedHeader = parseHunkHeader(patchLines[index] ?? '');
-    if (parsedHeader) {
-      foundHunk = true;
-      ordinal += 1;
-      const hunkStart = index;
-      index += 1;
-      while (index < patchLines.length && !parseHunkHeader(patchLines[index] ?? '')) {
-        index += 1;
-      }
-      hunkLinesByOrdinal.set(ordinal, patchLines.slice(hunkStart, index));
-      continue;
-    }
-
-    if (!foundHunk) {
-      headerLines.push(patchLines[index] ?? '');
-    }
-    index += 1;
-  }
-
-  if (!foundHunk) {
-    return null;
-  }
-
-  const selectedHunkLines = [];
-  for (const hunkId of hunkIds) {
-    const ordinal = getHunkOrdinal(sectionId, hunkId);
-    if (ordinal == null) {
-      return null;
-    }
-    const lines = hunkLinesByOrdinal.get(ordinal);
-    if (!lines) {
-      return null;
-    }
-    selectedHunkLines.push(...lines);
-  }
-
-  if (selectedHunkLines.length === 0) {
-    return null;
-  }
-
-  const focused = [...headerLines, ...selectedHunkLines].join('\n');
-  return patch.endsWith('\n') && !focused.endsWith('\n') ? `${focused}\n` : focused;
-};
-
 module.exports = {
   buildAnchorDisplay,
-  extractPatchHunks,
-  filterPatchToHunkIds,
   getSectionWalkthroughHunks,
-  HUNK_HEADER,
   hunkDisplayEnd,
   hunkDisplayStart,
   isGeneratedWalkthroughFile,
   isGeneratedWalkthroughPath,
   isSyntheticWalkthroughHunk,
-  parseHunkHeader,
   sumHunkLineCounts,
 };

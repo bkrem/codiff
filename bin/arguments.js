@@ -6,7 +6,7 @@ import reviewSource from '../electron/review-source.cjs';
 
 const { parseReviewUrl, resolveReviewUrl } = reviewSource;
 
-export const flagDefinitions = [
+const flagDefinitions = [
   {
     argument: '<codex|claude|opencode|pi>',
     description: 'Override the agent backend for this session.',
@@ -87,7 +87,7 @@ export const flagDefinitions = [
   },
 ];
 
-export const usageExamples = [
+const usageExamples = [
   { command: 'codiff', description: 'Review staged and unstaged changes.' },
   { command: 'codiff /path/to/repo', description: 'Review changes in a specific repository.' },
   { command: 'codiff main', description: 'Review the current branch against main.' },

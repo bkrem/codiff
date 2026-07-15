@@ -105,7 +105,4 @@ const createPendingCommentsClipboardController = ({
   };
 };
 
-module.exports = {
-  DEFAULT_COPY_PENDING_COMMENTS_TIMEOUT_MS,
-  createPendingCommentsClipboardController,
-};
+module.exports = { createPendingCommentsClipboardController };

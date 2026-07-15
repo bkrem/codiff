@@ -279,10 +279,7 @@ const resolvePlanReviewThreadsAtPath = async (path, threadIds, reason) => {
 
 module.exports = {
   getPlanReviewPath,
-  normalizePlanReview,
   readPlanReview,
-  readPlanReviewAtPath,
   resolvePlanReviewThreadsAtPath,
   writePlanReview,
-  writePlanReviewAtPath,
 };

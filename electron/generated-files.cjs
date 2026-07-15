@@ -141,10 +141,7 @@ const annotateGeneratedFiles = async (state) =>
   );
 
 module.exports = {
-  GENERATED_ATTRIBUTES,
   annotateGeneratedFiles,
   applyGeneratedAttributeStates,
-  getGeneratedAttributeSource,
-  isGeneratedAttributeValue,
   readGeneratedAttributeStates,
 };

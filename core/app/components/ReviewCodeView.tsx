@@ -351,9 +351,7 @@ const getGitIdentityDisplayName = (identity: GitIdentity | null) =>
   identity?.name || identity?.email || 'Git user';
 
 function ReviewAvatar({ author }: { author: PullRequestExistingReviewComment['author'] }) {
-  return (
-    <Avatar fallback={getReviewAuthorDisplayName(author)} size="medium" url={author.avatarUrl} />
-  );
+  return <Avatar name={getReviewAuthorDisplayName(author)} size="medium" url={author.avatarUrl} />;
 }
 
 function IdentityReviewAvatar({ identity }: { identity: GitIdentity | null }) {
@@ -831,9 +829,7 @@ function SourceDescriptionBody({
         author ? '' : ' source-description-comment-anonymous'
       }`}
     >
-      {author ? (
-        <Avatar fallback={author.displayName} size="medium" url={author.avatarUrl} />
-      ) : null}
+      {author ? <Avatar name={author.displayName} size="medium" url={author.avatarUrl} /> : null}
       <div className="review-comment-body source-description-body">
         {author || canEditDescription || editing ? (
           <div

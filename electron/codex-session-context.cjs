@@ -222,8 +222,4 @@ const readCodexSessionContext = async (codexSessionId) => {
   };
 };
 
-module.exports = {
-  findCodexSessionFile,
-  readCodexSessionContext,
-  readSessionMessages,
-};
+module.exports = { readCodexSessionContext };

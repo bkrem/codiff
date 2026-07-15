@@ -2,7 +2,7 @@ import type { DiffSearchMatch } from './app-types.ts';
 
 const searchMarkSelector = 'mark.codiff-search-mark';
 
-export const clearSearchHighlights = (root: ParentNode) => {
+const clearSearchHighlights = (root: ParentNode) => {
   for (const mark of Array.from(root.querySelectorAll<HTMLElement>(searchMarkSelector))) {
     const parent = mark.parentElement;
     mark.replaceWith(document.createTextNode(mark.textContent ?? ''));

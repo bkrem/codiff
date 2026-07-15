@@ -474,8 +474,6 @@ const readRepositoryChangeSignature = async (launchPath, additionalPaths = []) =
 };
 
 module.exports = {
-  getStatusItemForPath,
-  listUntrackedItems,
   readDiffSectionContent,
   readDiffImageContent,
   readGitIdentity,

@@ -3,16 +3,12 @@ import { expect, test } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
 const {
-  AGENT_BACKENDS,
-  DEFAULT_AGENT_BACKEND,
   detectInitialAgentBackend,
   getAgent,
   getAgentMenuModels,
   listAgents,
   normalizeAgentBackend,
 } = require('../agent.cjs') as {
-  AGENT_BACKENDS: ReadonlyArray<'codex' | 'claude' | 'opencode' | 'pi'>;
-  DEFAULT_AGENT_BACKEND: string;
   detectInitialAgentBackend: (
     isAvailable?: (agent: { id: 'codex' | 'claude' | 'opencode' | 'pi' }) => boolean,
   ) => string;
@@ -40,12 +36,11 @@ test('normalizes unknown agent backends to the default', () => {
   expect(normalizeAgentBackend('codex')).toBe('codex');
   expect(normalizeAgentBackend('opencode')).toBe('opencode');
   expect(normalizeAgentBackend('pi')).toBe('pi');
-  expect(normalizeAgentBackend('gpt')).toBe(DEFAULT_AGENT_BACKEND);
-  expect(normalizeAgentBackend(undefined)).toBe(DEFAULT_AGENT_BACKEND);
+  expect(normalizeAgentBackend('gpt')).toBe('codex');
+  expect(normalizeAgentBackend(undefined)).toBe('codex');
 });
 
 test('lists all agent backends', () => {
-  expect(AGENT_BACKENDS).toEqual(['codex', 'claude', 'opencode', 'pi']);
   expect(listAgents().map((agent) => agent.id)).toEqual(['codex', 'claude', 'opencode', 'pi']);
 });
 
@@ -117,5 +112,5 @@ test('shows a custom configured model in the agent model menu', () => {
 });
 
 test('falls back to the default backend for unknown ids', () => {
-  expect(getAgent('unknown').id).toBe(DEFAULT_AGENT_BACKEND);
+  expect(getAgent('unknown').id).toBe('codex');
 });

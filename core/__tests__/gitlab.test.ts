@@ -1,7 +1,9 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, test } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
@@ -12,146 +14,136 @@ type GitLabPosition = Record<string, unknown> & {
   };
 };
 const {
-  createGitLabDiffLineMap,
   createGitLabPosition,
-  createGlabApiArgs,
   createMergeRequestFetchRefspecs,
-  createMergeRequestSource,
-  getGitLabDiscussionReplyEndpoint,
-  getGitLabReviewQuickAction,
-  getGlabCommand,
-  GLAB_NOT_FOUND_CODE,
-  GLAB_NOT_FOUND_MESSAGE,
   normalizeGitLabReviewComment,
-  normalizeSubmittedGitLabReviewComment,
   parseGitLabMergeRequestUrl,
-  parseGlabJsonPages,
+  submitMergeRequestComment,
+  submitMergeRequestReview,
 } = require('../../electron/git-state/merge-request.cjs') as {
-  createGitLabDiffLineMap: (diff: string) => Map<string, { newLine?: number; oldLine?: number }>;
   createGitLabPosition: (
     comment: Record<string, unknown>,
     metadata: Record<string, unknown>,
     diff?: Record<string, unknown>,
   ) => GitLabPosition;
-  createGlabApiArgs: (
-    mergeRequest: { host: string },
-    args: ReadonlyArray<string>,
-    input?: unknown,
-  ) => ReadonlyArray<string>;
   createMergeRequestFetchRefspecs: (
     mergeRequest: Record<string, unknown>,
     metadata: Record<string, unknown>,
   ) => ReadonlyArray<string>;
-  createMergeRequestSource: (
-    mergeRequest: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-  ) => Record<string, unknown>;
-  getGitLabDiscussionReplyEndpoint: (
-    mergeRequest: { number: number; projectPath: string },
-    threadId: string,
-  ) => string;
-  getGitLabReviewQuickAction: (event: 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES') => string;
-  getGlabCommand: () => string;
-  GLAB_NOT_FOUND_CODE: string;
-  GLAB_NOT_FOUND_MESSAGE: string;
   normalizeGitLabReviewComment: (
     note: Record<string, unknown>,
     url: string,
   ) => Record<string, unknown> | null;
-  normalizeSubmittedGitLabReviewComment: (
-    note: Record<string, unknown>,
-    submittedComment: Record<string, unknown>,
-    url: string,
-  ) => Record<string, unknown> | null;
   parseGitLabMergeRequestUrl: (url: string) => Record<string, unknown>;
-  parseGlabJsonPages: (value: string) => ReadonlyArray<Record<string, unknown>>;
+  submitMergeRequestComment: (
+    launchPath: string,
+    request: {
+      comment: Record<string, unknown>;
+      source: Record<string, unknown>;
+    },
+  ) => Promise<Record<string, unknown>>;
+  submitMergeRequestReview: (
+    launchPath: string,
+    request: {
+      body?: string;
+      comments: ReadonlyArray<Record<string, unknown>>;
+      event: 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES';
+      source: Record<string, unknown>;
+    },
+  ) => Promise<void>;
 };
-const { parseRemoteUrl } = require('../../electron/review-source.cjs') as {
-  parseRemoteUrl: (url: string) => Record<string, unknown> | null;
+
+const execFileAsync = promisify(execFile);
+
+type GlabCall = {
+  args: ReadonlyArray<string>;
+  input: string;
+};
+
+const withFakeGitLab = async (
+  callback: (repo: string, readCalls: () => Promise<ReadonlyArray<GlabCall>>) => Promise<void>,
+) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-gitlab-'));
+  const repo = join(directory, 'repo');
+  const fakeGlabPath = join(directory, 'glab');
+  const callsPath = join(directory, 'calls.jsonl');
+  const previousGlabPath = process.env.CODIFF_GLAB_PATH;
+  const previousCallsPath = process.env.CODIFF_GLAB_TEST_CALLS;
+
+  try {
+    await execFileAsync('git', ['init', repo]);
+    await execFileAsync('git', [
+      '-C',
+      repo,
+      'remote',
+      'add',
+      'origin',
+      'ssh://git@gitlab.example.com/group/project.git',
+    ]);
+    await writeFile(
+      fakeGlabPath,
+      `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+const endpoint = args.at(-1) || '';
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+  appendFileSync(process.env.CODIFF_GLAB_TEST_CALLS, JSON.stringify({ args, input }) + '\\n');
+  if (endpoint.endsWith('/diffs?per_page=100')) {
+    process.stdout.write(
+      '[{"diff":"@@ -10,2 +12,2 @@\\\\n context\\\\n-old\\\\n+new\\\\n","new_path":"src/new.ts","old_path":"src/old.ts"}]' +
+        '[{"diff":"@@ -1 +1 @@\\\\n-old\\\\n+new\\\\n","new_path":"src/other.ts","old_path":"src/other.ts"}]',
+    );
+    return;
+  }
+  if (endpoint.endsWith('/discussions/discussion%2Fwith%20spaces/notes')) {
+    process.stdout.write(JSON.stringify({
+      author: { username: 'reviewer' },
+      body: 'Reply in the existing discussion.',
+      created_at: '2026-07-08T00:00:00Z',
+      id: 46,
+    }));
+    return;
+  }
+  if (endpoint.endsWith('/merge_requests/23')) {
+    process.stdout.write(JSON.stringify({
+      diff_refs: { base_sha: 'base', head_sha: 'head', start_sha: 'start' },
+    }));
+    return;
+  }
+  process.stdout.write('{}');
+});
+`,
+    );
+    await chmod(fakeGlabPath, 0o755);
+    process.env.CODIFF_GLAB_PATH = fakeGlabPath;
+    process.env.CODIFF_GLAB_TEST_CALLS = callsPath;
+
+    await callback(repo, async () =>
+      (await readFile(callsPath, 'utf8'))
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as GlabCall),
+    );
+  } finally {
+    if (previousGlabPath == null) {
+      delete process.env.CODIFF_GLAB_PATH;
+    } else {
+      process.env.CODIFF_GLAB_PATH = previousGlabPath;
+    }
+    if (previousCallsPath == null) {
+      delete process.env.CODIFF_GLAB_TEST_CALLS;
+    } else {
+      process.env.CODIFF_GLAB_TEST_CALLS = previousCallsPath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
 };
 
 describe('GitLab merge requests', () => {
-  test('builds the endpoint for replying to an existing discussion', () => {
-    expect(
-      getGitLabDiscussionReplyEndpoint(
-        { number: 23, projectPath: 'group/project' },
-        'discussion/with spaces',
-      ),
-    ).toBe(
-      'projects/group%2Fproject/merge_requests/23/discussions/discussion%2Fwith%20spaces/notes',
-    );
-  });
-
-  test('sends JSON content types for glab request bodies', () => {
-    expect(
-      createGlabApiArgs(
-        { host: 'gitlab.example.com' },
-        ['--method', 'POST', '--input', '-', 'projects/1/merge_requests/2/discussions'],
-        { body: 'Comment', position: {} },
-      ),
-    ).toEqual([
-      'api',
-      '--hostname',
-      'gitlab.example.com',
-      '--header',
-      'Content-Type: application/json',
-      '--method',
-      'POST',
-      '--input',
-      '-',
-      'projects/1/merge_requests/2/discussions',
-    ]);
-  });
-
-  test('resolves glab from the CODIFF_GLAB_PATH override', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'codiff-glab-'));
-    const fakeGlabPath = join(directory, 'glab');
-    const previousGlabPath = process.env.CODIFF_GLAB_PATH;
-
-    try {
-      await writeFile(fakeGlabPath, '#!/usr/bin/env node\n');
-      await chmod(fakeGlabPath, 0o755);
-      process.env.CODIFF_GLAB_PATH = fakeGlabPath;
-
-      expect(getGlabCommand()).toBe(fakeGlabPath);
-    } finally {
-      if (previousGlabPath == null) {
-        delete process.env.CODIFF_GLAB_PATH;
-      } else {
-        process.env.CODIFF_GLAB_PATH = previousGlabPath;
-      }
-      await rm(directory, { force: true, recursive: true });
-    }
-  });
-
-  test('rejects invalid explicit glab CLI overrides', () => {
-    const previousGlabPath = process.env.CODIFF_GLAB_PATH;
-    process.env.CODIFF_GLAB_PATH = '/tmp/codiff-missing-glab';
-
-    try {
-      expect(() => getGlabCommand()).toThrow('CODIFF_GLAB_PATH');
-      try {
-        getGlabCommand();
-      } catch (error) {
-        expect(error).toMatchObject({ code: GLAB_NOT_FOUND_CODE });
-      }
-    } finally {
-      if (previousGlabPath == null) {
-        delete process.env.CODIFF_GLAB_PATH;
-      } else {
-        process.env.CODIFF_GLAB_PATH = previousGlabPath;
-      }
-    }
-  });
-
-  test('explains where Codiff searches for glab when it is missing', () => {
-    expect(GLAB_NOT_FOUND_MESSAGE).toContain('PATH');
-    expect(GLAB_NOT_FOUND_MESSAGE).toContain('~/.local/bin/glab');
-    expect(GLAB_NOT_FOUND_MESSAGE).toContain('/opt/homebrew/bin/glab');
-    expect(GLAB_NOT_FOUND_MESSAGE).toContain('/usr/local/bin/glab');
-    expect(GLAB_NOT_FOUND_MESSAGE).toContain('CODIFF_GLAB_PATH=/absolute/path/to/glab');
-  });
-
   test('parses arbitrary hosts and nested project paths', () => {
     expect(
       parseGitLabMergeRequestUrl(
@@ -161,20 +153,6 @@ describe('GitLab merge requests', () => {
       host: 'gitlab.example.com',
       number: 23,
       projectPath: 'group/subgroup/project',
-      provider: 'gitlab',
-    });
-  });
-
-  test('parses concatenated JSON arrays from paginated glab output', () => {
-    expect(
-      parseGlabJsonPages('[{"id":1,"body":"brackets ][ inside strings"}][{"id":2}]\n[{"id":3}]'),
-    ).toEqual([{ body: 'brackets ][ inside strings', id: 1 }, { id: 2 }, { id: 3 }]);
-  });
-
-  test('parses SSH remotes and preserves custom GitLab ports', () => {
-    expect(parseRemoteUrl('ssh://git@gitlab.example.com:2222/group/project.git')).toEqual({
-      host: 'gitlab.example.com:2222',
-      projectPath: 'group/project',
       provider: 'gitlab',
     });
   });
@@ -191,62 +169,6 @@ describe('GitLab merge requests', () => {
       '+refs/merge-requests/23/head:refs/codiff/merge-requests/23/head',
       '+refs/heads/main:refs/codiff/merge-requests/23/base',
     ]);
-  });
-
-  test('normalizes non-empty GitLab MR descriptions', () => {
-    expect(
-      createMergeRequestSource(
-        {
-          host: 'gitlab.example.com',
-          number: 23,
-          projectPath: 'group/project',
-          url: 'https://gitlab.example.com/group/project/-/merge_requests/23',
-        },
-        {
-          author: {
-            avatar_url: 'https://gitlab.example.com/avatar.png',
-            username: 'mona',
-            web_url: 'https://gitlab.example.com/mona',
-          },
-          description: '\n### Intent\n\nKeep the branch reviewable.\n',
-          sha: 'head-sha',
-          title: 'Reviewable branch',
-          web_url: 'https://gitlab.example.com/group/project/-/merge_requests/23',
-        },
-      ),
-    ).toMatchObject({
-      author: {
-        avatarUrl: 'https://gitlab.example.com/avatar.png',
-        login: 'mona',
-        url: 'https://gitlab.example.com/mona',
-      },
-      description: '### Intent\n\nKeep the branch reviewable.',
-      provider: 'gitlab',
-      title: 'Reviewable branch',
-      type: 'pull-request',
-    });
-  });
-
-  test('omits blank GitLab MR descriptions', () => {
-    expect(
-      createMergeRequestSource(
-        {
-          host: 'gitlab.example.com',
-          number: 23,
-          projectPath: 'group/project',
-          url: 'https://gitlab.example.com/group/project/-/merge_requests/23',
-        },
-        { description: ' \n ' },
-      ),
-    ).not.toHaveProperty('description');
-  });
-
-  test('maps review outcomes to GitLab review quick actions', () => {
-    expect(getGitLabReviewQuickAction('APPROVE')).toBe('/submit_review approve');
-    expect(getGitLabReviewQuickAction('REQUEST_CHANGES')).toBe('/submit_review request_changes');
-    expect(() => getGitLabReviewQuickAction('COMMENT')).toThrow(
-      'GitLab merge request reviews do not support COMMENT.',
-    );
   });
 
   test('builds single-line and ranged GitLab diff positions', () => {
@@ -328,10 +250,6 @@ describe('GitLab merge requests', () => {
       new_path: 'src/new.ts',
       old_path: 'src/old.ts',
     };
-    expect(createGitLabDiffLineMap(diff.diff).get('additions:12')).toEqual({
-      newLine: 12,
-      oldLine: 10,
-    });
     expect(
       createGitLabPosition(
         {
@@ -404,30 +322,99 @@ describe('GitLab merge requests', () => {
     });
   });
 
-  test('normalizes GitLab discussion replies that omit position metadata', () => {
-    expect(
-      normalizeSubmittedGitLabReviewComment(
-        {
-          author: { username: 'reviewer' },
-          body: 'Reply in the existing discussion.',
-          created_at: '2026-07-08T00:00:00Z',
-          id: 46,
+  test('submits GitLab reviews with paginated diffs and JSON request bodies', async () => {
+    await withFakeGitLab(async (repo, readCalls) => {
+      const source = {
+        provider: 'gitlab',
+        type: 'pull-request',
+        url: 'https://gitlab.example.com/group/project/-/merge_requests/23',
+      };
+
+      await submitMergeRequestReview(repo, {
+        body: 'Looks good.',
+        comments: [
+          {
+            body: 'Keep this explicit.',
+            filePath: 'src/new.ts',
+            lineNumber: 12,
+            side: 'additions',
+          },
+        ],
+        event: 'APPROVE',
+        source,
+      });
+      await submitMergeRequestReview(repo, {
+        comments: [],
+        event: 'REQUEST_CHANGES',
+        source,
+      });
+      await expect(
+        submitMergeRequestReview(repo, {
+          comments: [],
+          event: 'COMMENT',
+          source,
+        }),
+      ).rejects.toThrow('GitLab merge request reviews do not support COMMENT.');
+
+      const calls = await readCalls();
+      const requestsWithBodies = calls.filter((call) => call.input);
+      for (const call of requestsWithBodies) {
+        expect(call.args).toContain('--header');
+        expect(call.args).toContain('Content-Type: application/json');
+      }
+
+      const draftCall = calls.find((call) => call.args.at(-1)?.endsWith('/draft_notes'));
+      expect(JSON.parse(draftCall?.input || '')).toMatchObject({
+        note: 'Keep this explicit.',
+        position: {
+          new_line: 12,
+          new_path: 'src/new.ts',
+          old_line: 10,
+          old_path: 'src/old.ts',
         },
-        {
-          anchor: 'file',
-          body: 'Reply in the existing discussion.',
-          filePath: 'src/a.ts',
-          threadId: 'discussion-1',
-        },
-        'https://gitlab.example.com/group/project/-/merge_requests/23',
-      ),
-    ).toMatchObject({
-      anchor: 'file',
-      body: 'Reply in the existing discussion.',
-      filePath: 'src/a.ts',
-      id: 'gitlab:46',
-      threadId: 'discussion-1',
-      url: 'https://gitlab.example.com/group/project/-/merge_requests/23#note_46',
+      });
+
+      const noteBodies = calls
+        .filter((call) => call.args.at(-1)?.endsWith('/notes'))
+        .map((call) => JSON.parse(call.input).body);
+      expect(noteBodies).toEqual([
+        'Looks good.\n\n/submit_review approve',
+        '/submit_review request_changes',
+      ]);
+    });
+  });
+
+  test('preserves submitted metadata when GitLab discussion replies omit positions', async () => {
+    await withFakeGitLab(async (repo, readCalls) => {
+      await expect(
+        submitMergeRequestComment(repo, {
+          comment: {
+            anchor: 'file',
+            body: 'Reply in the existing discussion.',
+            filePath: 'src/a.ts',
+            threadId: 'discussion/with spaces',
+          },
+          source: {
+            provider: 'gitlab',
+            type: 'pull-request',
+            url: 'https://gitlab.example.com/group/project/-/merge_requests/23',
+          },
+        }),
+      ).resolves.toMatchObject({
+        anchor: 'file',
+        body: 'Reply in the existing discussion.',
+        filePath: 'src/a.ts',
+        id: 'gitlab:46',
+        threadId: 'discussion/with spaces',
+        url: 'https://gitlab.example.com/group/project/-/merge_requests/23#note_46',
+      });
+
+      const [call] = await readCalls();
+      expect(call.args.at(-1)).toBe(
+        'projects/group%2Fproject/merge_requests/23/discussions/discussion%2Fwith%20spaces/notes',
+      );
+      expect(call.args).toContain('Content-Type: application/json');
+      expect(JSON.parse(call.input)).toEqual({ body: 'Reply in the existing discussion.' });
     });
   });
 });

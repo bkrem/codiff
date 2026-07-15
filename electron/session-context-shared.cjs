@@ -55,7 +55,4 @@ const readSessionFileTail = async (path) => {
   }
 };
 
-module.exports = {
-  MAX_SESSION_READ_BYTES,
-  readSessionFileTail,
-};
+module.exports = { readSessionFileTail };

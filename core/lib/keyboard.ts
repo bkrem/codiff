@@ -10,8 +10,7 @@ export const isNativeInputTarget = (target: EventTarget | null) => {
   );
 };
 
-export const isMacPlatform = (platform = navigator.platform) =>
-  platform.toLowerCase().includes('mac');
+const isMacPlatform = (platform = navigator.platform) => platform.toLowerCase().includes('mac');
 
 export const isDiffSearchShortcut = (
   event: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>,
@@ -24,8 +23,4 @@ export const isDiffSearchShortcut = (
   return isMacPlatform(platform)
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
-};
-
-export const getReloadShortcutLabel = () => {
-  return isMacPlatform() ? '⌘R' : 'Ctrl+R';
 };

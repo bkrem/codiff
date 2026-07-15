@@ -59,7 +59,4 @@ const createSharedPlanSnapshot = ({
   version: /** @type {const} */ (1),
 });
 
-module.exports = {
-  createSharedPlanSnapshot,
-  getPlanTitle,
-};
+module.exports = { createSharedPlanSnapshot };

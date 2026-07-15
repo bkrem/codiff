@@ -228,9 +228,6 @@ const findMatchingWindowIdentity = (identity, existingIdentities) => {
 
 module.exports = {
   findMatchingWindowIdentity,
-  getSourceKey,
   getWindowIdentity,
   getWindowIdentityForSource,
-  parseGitHubPullRequestUrl,
-  resolveRepositoryRoot,
 };

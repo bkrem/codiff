@@ -2,16 +2,35 @@ import { createRequire } from 'node:module';
 import { expect, test, vi } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const { createSystemCertificateTrust } = require('../system-certificates.cjs') as {
-  createSystemCertificateTrust: (tlsImpl: {
-    getCACertificates?: (source?: string) => Array<string>;
-    setDefaultCACertificates?: (certificates: Array<string>) => void;
-  }) => () => { reason?: string; status: string };
+const tls = require('node:tls') as {
+  getCACertificates?: (source?: string) => Array<string>;
+  setDefaultCACertificates?: (certificates: Array<string>) => void;
+};
+const modulePath = require.resolve('../system-certificates.cjs');
+
+const loadTrustSystemCertificates = (tlsImpl: typeof tls) => {
+  const originalGetCACertificates = tls.getCACertificates;
+  const originalSetDefaultCACertificates = tls.setDefaultCACertificates;
+  tls.getCACertificates = tlsImpl.getCACertificates;
+  tls.setDefaultCACertificates = tlsImpl.setDefaultCACertificates;
+  delete require.cache[modulePath];
+  const { trustSystemCertificates } = require(modulePath) as {
+    trustSystemCertificates: () => { reason?: string; status: string };
+  };
+
+  return {
+    restore: () => {
+      tls.getCACertificates = originalGetCACertificates;
+      tls.setDefaultCACertificates = originalSetDefaultCACertificates;
+      delete require.cache[modulePath];
+    },
+    trustSystemCertificates,
+  };
 };
 
-test('merges default, extra, and system certificates once', () => {
+test.sequential('merges default, extra, and system certificates once', () => {
   const setDefaultCACertificates = vi.fn();
-  const trustSystemCertificates = createSystemCertificateTrust({
+  const { restore, trustSystemCertificates } = loadTrustSystemCertificates({
     getCACertificates: (source) => {
       if (source === 'default') {
         return ['default-ca', 'shared-ca'];
@@ -27,44 +46,63 @@ test('merges default, extra, and system certificates once', () => {
     setDefaultCACertificates,
   });
 
-  expect(trustSystemCertificates()).toEqual({ status: 'applied' });
-  expect(trustSystemCertificates()).toEqual({ status: 'applied' });
-  expect(setDefaultCACertificates).toHaveBeenCalledOnce();
-  expect(setDefaultCACertificates).toHaveBeenCalledWith([
-    'default-ca',
-    'shared-ca',
-    'extra-ca',
-    'system-ca',
-  ]);
+  try {
+    expect(trustSystemCertificates()).toEqual({ status: 'applied' });
+    expect(trustSystemCertificates()).toEqual({ status: 'applied' });
+    expect(setDefaultCACertificates).toHaveBeenCalledOnce();
+    expect(setDefaultCACertificates).toHaveBeenCalledWith([
+      'default-ca',
+      'shared-ca',
+      'extra-ca',
+      'system-ca',
+    ]);
+  } finally {
+    restore();
+  }
 });
 
-test('does not mark certificate trust as initialized after a failed apply', () => {
+test.sequential('does not mark certificate trust as initialized after a failed apply', () => {
   const setDefaultCACertificates = vi
     .fn()
     .mockImplementationOnce(() => {
       throw new Error('keychain busy');
     })
     .mockImplementationOnce(() => {});
-  const trustSystemCertificates = createSystemCertificateTrust({
+  const { restore, trustSystemCertificates } = loadTrustSystemCertificates({
     getCACertificates: (source) => (source === 'system' ? ['system-ca'] : []),
     setDefaultCACertificates,
   });
 
-  expect(trustSystemCertificates()).toEqual({ reason: 'keychain busy', status: 'failed' });
-  expect(trustSystemCertificates()).toEqual({ status: 'applied' });
-  expect(setDefaultCACertificates).toHaveBeenCalledTimes(2);
+  try {
+    expect(trustSystemCertificates()).toEqual({ reason: 'keychain busy', status: 'failed' });
+    expect(trustSystemCertificates()).toEqual({ status: 'applied' });
+    expect(setDefaultCACertificates).toHaveBeenCalledTimes(2);
+  } finally {
+    restore();
+  }
 });
 
-test('reports unavailable and empty system certificate stores', () => {
-  expect(createSystemCertificateTrust({})()).toEqual({
-    reason: 'this Node/Electron runtime does not expose system certificate APIs',
-    status: 'unavailable',
-  });
+test.sequential('reports unavailable and empty system certificate stores', () => {
+  const unavailable = loadTrustSystemCertificates({});
+  try {
+    expect(unavailable.trustSystemCertificates()).toEqual({
+      reason: 'this Node/Electron runtime does not expose system certificate APIs',
+      status: 'unavailable',
+    });
+  } finally {
+    unavailable.restore();
+  }
 
-  expect(
-    createSystemCertificateTrust({
-      getCACertificates: () => [],
-      setDefaultCACertificates: vi.fn(),
-    })(),
-  ).toEqual({ reason: 'the system certificate store was empty', status: 'empty-system' });
+  const empty = loadTrustSystemCertificates({
+    getCACertificates: () => [],
+    setDefaultCACertificates: vi.fn(),
+  });
+  try {
+    expect(empty.trustSystemCertificates()).toEqual({
+      reason: 'the system certificate store was empty',
+      status: 'empty-system',
+    });
+  } finally {
+    empty.restore();
+  }
 });

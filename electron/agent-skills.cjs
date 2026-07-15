@@ -60,9 +60,6 @@ const AGENT_SKILLS = Object.freeze([
   },
 ]);
 
-/** @param {unknown} id @returns {AgentSkill | undefined} */
-const getAgentSkill = (id) => AGENT_SKILLS.find((skill) => skill.id === id);
-
 /** @returns {ReadonlyArray<AgentSkill>} */
 const listAgentSkills = () => AGENT_SKILLS;
 
@@ -79,8 +76,6 @@ const buildInstallSkillMenuItem = (install) => ({
 });
 
 module.exports = {
-  AGENT_SKILLS,
   buildInstallSkillMenuItem,
-  getAgentSkill,
   listAgentSkills,
 };

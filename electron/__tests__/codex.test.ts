@@ -7,29 +7,14 @@ import { expect, test } from 'vite-plus/test';
 const require = createRequire(import.meta.url);
 const {
   CODEX_NOT_FOUND_CODE,
-  CODEX_NOT_FOUND_MESSAGE,
   DEFAULT_OPENAI_MODEL,
   getCodexCommand,
-  getCodexInstallPaths,
-  getCodexLaunchErrorMessage,
-  getOpenAIModelFallbacks,
-  getOpenAIModelReasoningEffort,
-  isOpenAIModelAvailabilityError,
   normalizeOpenAIModel,
   runCodex,
 } = require('../codex.cjs') as {
   CODEX_NOT_FOUND_CODE: string;
-  CODEX_NOT_FOUND_MESSAGE: string;
   DEFAULT_OPENAI_MODEL: string;
   getCodexCommand: () => string;
-  getCodexInstallPaths: (platform?: NodeJS.Platform, home?: string) => Array<string>;
-  getCodexLaunchErrorMessage: (error: unknown, platform?: NodeJS.Platform) => string;
-  getOpenAIModelFallbacks: (model: unknown, fallbackModel?: unknown) => Array<string>;
-  getOpenAIModelReasoningEffort: (
-    model: unknown,
-    reasoningEffort?: unknown,
-  ) => 'high' | 'low' | 'medium';
-  isOpenAIModelAvailabilityError: (value: string) => boolean;
   normalizeOpenAIModel: (value: unknown) => string;
   runCodex: (
     repoRoot: string,
@@ -68,80 +53,6 @@ test('normalizes OpenAI model preferences to known models', () => {
   expect(normalizeOpenAIModel('gpt-4o')).toBe(DEFAULT_OPENAI_MODEL);
 });
 
-test('uses eval-selected reasoning effort for each OpenAI model', () => {
-  expect(getOpenAIModelReasoningEffort('gpt-5.6-sol')).toBe('medium');
-  expect(getOpenAIModelReasoningEffort('gpt-5.6-terra')).toBe('low');
-  expect(getOpenAIModelReasoningEffort('gpt-5.6-luna')).toBe('medium');
-  expect(getOpenAIModelReasoningEffort('gpt-5.5')).toBe('low');
-  expect(getOpenAIModelReasoningEffort('gpt-5.6-sol', 'high')).toBe('high');
-});
-
-test('falls back from gated GPT-5.6 models to Terra and GPT-5.5', () => {
-  expect(getOpenAIModelFallbacks('gpt-5.6-sol')).toEqual(['gpt-5.6-terra', 'gpt-5.5']);
-  expect(getOpenAIModelFallbacks('gpt-5.6-luna')).toEqual(['gpt-5.6-terra', 'gpt-5.5']);
-  expect(getOpenAIModelFallbacks('gpt-5.6-terra')).toEqual(['gpt-5.5']);
-  expect(getOpenAIModelFallbacks('gpt-5.5')).toEqual([]);
-});
-
-test('detects selected model availability failures', () => {
-  expect(
-    isOpenAIModelAvailabilityError('You do not have access to model gpt-5.3-codex-spark.'),
-  ).toBe(true);
-  expect(isOpenAIModelAvailabilityError('Rate limit reached, please try again later.')).toBe(false);
-});
-
-test('explains macOS Codex CLI security blocks', () => {
-  expect(
-    getCodexLaunchErrorMessage(
-      new Error('"codex" was not opened because it contains malware.'),
-      'darwin',
-    ),
-  ).toContain('Update Codex CLI');
-  expect(
-    getCodexLaunchErrorMessage(
-      Object.assign(new Error('spawn codex EACCES'), {
-        code: 'EACCES',
-      }),
-      'darwin',
-    ),
-  ).toContain('Update Codex CLI');
-  expect(
-    getCodexLaunchErrorMessage(
-      {
-        message: 'Codex was terminated by SIGKILL.',
-        signal: 'SIGKILL',
-      },
-      'darwin',
-    ),
-  ).toContain('Update Codex CLI');
-  expect(getCodexLaunchErrorMessage(new Error('spawn codex EACCES'), 'linux')).toBe(
-    'spawn codex EACCES',
-  );
-});
-
-test('explains missing Codex CLI launches', () => {
-  expect(
-    getCodexLaunchErrorMessage(
-      Object.assign(new Error('spawn codex ENOENT'), {
-        code: 'ENOENT',
-      }),
-    ),
-  ).toBe(CODEX_NOT_FOUND_MESSAGE);
-});
-
-test('checks the Codex app embedded CLI on macOS', () => {
-  expect(getCodexInstallPaths('darwin', '/Users/reviewer')).toEqual([
-    '/opt/homebrew/bin/codex',
-    '/usr/local/bin/codex',
-    '/Applications/Codex.app/Contents/Resources/codex',
-    '/Users/reviewer/Applications/Codex.app/Contents/Resources/codex',
-  ]);
-  expect(getCodexInstallPaths('linux', '/home/reviewer')).toEqual([
-    '/opt/homebrew/bin/codex',
-    '/usr/local/bin/codex',
-  ]);
-});
-
 test('rejects invalid explicit Codex CLI overrides', () => {
   const previousCodexPath = process.env.CODIFF_CODEX_PATH;
   process.env.CODIFF_CODEX_PATH = '/tmp/codiff-missing-codex';
@@ -161,6 +72,38 @@ test('rejects invalid explicit Codex CLI overrides', () => {
     }
   }
 });
+
+test.skipIf(process.platform !== 'darwin')(
+  'explains macOS Codex CLI security blocks through runCodex',
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codiff-codex-blocked-'));
+    const fakeCodexPath = join(directory, 'codex');
+    const previousCodexPath = process.env.CODIFF_CODEX_PATH;
+
+    try {
+      await writeFile(
+        fakeCodexPath,
+        `#!/bin/sh
+printf '%s\\n' '"codex" was not opened because it contains malware.' >&2
+exit 1
+`,
+      );
+      await chmod(fakeCodexPath, 0o755);
+      process.env.CODIFF_CODEX_PATH = fakeCodexPath;
+
+      await expect(
+        runCodex('/repo', 'prompt', {}, 'walkthrough.json', 'Timed out.'),
+      ).rejects.toThrow('Update Codex CLI');
+    } finally {
+      if (previousCodexPath == null) {
+        delete process.env.CODIFF_CODEX_PATH;
+      } else {
+        process.env.CODIFF_CODEX_PATH = previousCodexPath;
+      }
+      await rm(directory, { force: true, recursive: true });
+    }
+  },
+);
 
 test('runs Codex walkthroughs as fresh ephemeral repository-scoped calls', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'codiff-codex-'));

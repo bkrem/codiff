@@ -1,13 +1,27 @@
 import { useState } from 'react';
 
-const getNameParts = (name: string) =>
-  name
-    .trim()
-    .split(/\s+/)
-    .map((part) => [...part].filter((character) => /[\p{L}\p{N}]/u.test(character)).join(''))
-    .filter(Boolean);
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
-const getInitial = (part: string) => [...part][0]?.toLocaleUpperCase() ?? '';
+const getNameParts = (name: string) => {
+  const parts = [];
+  for (const part of name.normalize('NFC').trim().split(/\s+/)) {
+    let normalizedPart = '';
+    for (const character of part) {
+      if (/[\p{L}\p{M}\p{N}]/u.test(character)) {
+        normalizedPart += character;
+      }
+    }
+    if (/[\p{L}\p{N}]/u.test(normalizedPart)) {
+      parts.push(normalizedPart);
+    }
+  }
+  return parts;
+};
+
+const getGraphemes = (value: string) =>
+  [...graphemeSegmenter.segment(value)].map(({ segment }) => segment);
+
+const getInitial = (part: string) => getGraphemes(part.toLocaleUpperCase())[0] ?? '';
 
 const getAvatarInitials = (name: string) => {
   const parts = getNameParts(name);
@@ -15,20 +29,12 @@ const getAvatarInitials = (name: string) => {
     return '?';
   }
   if (parts.length === 1) {
-    return [...parts[0]].slice(0, 2).join('').toLocaleUpperCase();
+    return getGraphemes(parts[0].toLocaleUpperCase()).slice(0, 2).join('');
   }
   return `${getInitial(parts[0])}${getInitial(parts.at(-1) ?? '')}` || '?';
 };
 
-function Avatar({
-  fallback,
-  size,
-  url,
-}: {
-  fallback: string;
-  size: 'medium' | 'small';
-  url?: string;
-}) {
+function Avatar({ name, size, url }: { name: string; size: 'medium' | 'small'; url?: string }) {
   const className = `avatar ${size}`;
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const showImage = url && failedUrl !== url;
@@ -43,7 +49,7 @@ function Avatar({
     />
   ) : (
     <span aria-hidden className={`${className} fallback`}>
-      {getAvatarInitials(fallback)}
+      {getAvatarInitials(name)}
     </span>
   );
 }

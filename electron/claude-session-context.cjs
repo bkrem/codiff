@@ -225,8 +225,4 @@ const readClaudeSessionContext = async (claudeSessionId) => {
   };
 };
 
-module.exports = {
-  findClaudeSessionFile,
-  readClaudeSessionContext,
-  readSessionMessages,
-};
+module.exports = { readClaudeSessionContext };

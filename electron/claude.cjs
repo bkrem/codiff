@@ -363,14 +363,11 @@ const runClaude = async (
 module.exports = {
   CLAUDE_MODELS,
   CLAUDE_NOT_FOUND_CODE,
-  CLAUDE_NOT_FOUND_MESSAGE,
   CLAUDE_TIMEOUT_MS,
   DEFAULT_CLAUDE_MODEL,
   FALLBACK_CLAUDE_MODEL,
   getClaudeCommand,
-  isClaudeModelAvailabilityError,
   isClaudeNotFoundError,
-  isClaudeNotLoggedInError,
   normalizeClaudeModel,
   runClaude,
 };

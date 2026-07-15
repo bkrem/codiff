@@ -208,11 +208,9 @@ module.exports = {
   FALLBACK_PI_MODEL,
   PI_MODELS,
   PI_NOT_FOUND_CODE,
-  PI_NOT_FOUND_MESSAGE,
   PI_TIMEOUT_MS,
   getPiCommand,
   isPiNotFoundError,
   normalizePiModel,
-  normalizePiOutput,
   runPi,
 };

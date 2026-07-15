@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 
-export const planOpenTimeoutMs = 15_000;
+const planOpenTimeoutMs = 15_000;
 
-export const isProcessRunning = (pid) => {
+const isProcessRunning = (pid) => {
   try {
     process.kill(pid, 0);
     return true;

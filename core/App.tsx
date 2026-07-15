@@ -1,12 +1,5 @@
 import type { FileDiffLoadedFiles } from '@pierre/diffs';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommandBar } from './app/components/CommandBar.tsx';
 import { KeyboardShortcutsHelp } from './app/components/KeyboardShortcutsHelp.tsx';
 import {
@@ -36,6 +29,14 @@ import {
   WalkthroughProgress,
 } from './app/components/walkthrough/WalkthroughProgress.tsx';
 import type { WalkthroughFileError } from './app/components/WalkthroughFileError.tsx';
+import { useAppReviewComments } from './app/hooks/useAppReviewComments.ts';
+import {
+  getCodeFontLineHeight,
+  normalizeCodeFontSizePreference,
+  useDocumentAppearance,
+} from './app/hooks/useDocumentAppearance.ts';
+import { useResizableSidebar } from './app/hooks/useResizableSidebar.ts';
+import { useReviewFileState } from './app/hooks/useReviewState.ts';
 import { createDefaultConfig } from './config/defaults.ts';
 import { getShortcutLabel, matchesShortcut } from './config/keymap.ts';
 import type { CodiffConfig } from './config/types.ts';
@@ -50,7 +51,6 @@ import {
   type CodeViewInstance,
   type DiffSearchResult,
   type RepositoryLoadError,
-  type ReviewComment,
   type ReviewIdentity,
   type ReviewScrollBehavior,
   type ReviewScrollTarget,
@@ -59,20 +59,16 @@ import {
   type WalkthroughNote,
   type WalkthroughError,
 } from './lib/app-types.ts';
-import { DEFAULT_PADDING } from './lib/code-view-options.ts';
 import { type Command, createCommandRegistry } from './lib/command-registry.ts';
 import { getDiffSearchResult } from './lib/diff-search.ts';
 import {
   fileHasVisibleDiff,
-  getFirstVisibleSection,
-  getItemId,
   isPatchOnlyDiffSection,
   shouldLoadDiffSectionContents,
   shouldPreloadSectionContentsForSearch,
 } from './lib/diff.ts';
 import { compactPath, fuzzyMatches, sortFiles } from './lib/files.ts';
 import { isNativeInputTarget } from './lib/keyboard.ts';
-import { isGeneratedWalkthroughFile } from './lib/narrative-walkthrough-diff.js';
 import { buildCommitModel, buildGenericCommitModel } from './lib/narrative-walkthrough.ts';
 import {
   consumeReloadSelection,
@@ -90,23 +86,13 @@ import {
 } from './lib/review-command-target.ts';
 import {
   buildReviewCommentsMarkdown,
-  findReusableReviewCommentDraft,
-  getCommentKey,
-  getPendingPullRequestReviewComments,
-  getReviewCommentRangeProps,
   getReviewCommentsFromState,
   getVisibleReviewComments,
-  toPullRequestReviewComment,
 } from './lib/review-comments.ts';
-import {
-  getFileReviewIdentity,
-  isReviewIdentityViewed,
-  updateReviewIdentityCollapsed,
-  updateReviewIdentityViewed,
-} from './lib/review-identity.ts';
+import { isReviewIdentityViewed } from './lib/review-identity.ts';
+import { getSelectedPathFromScroll } from './lib/review-scroll.ts';
 import {
   SIDEBAR_COLLAPSE_THRESHOLD,
-  clampSidebarWidth,
   readSidebarWidth,
   writeSidebarWidth,
 } from './lib/sidebar-width.ts';
@@ -132,9 +118,7 @@ import type {
   CodiffPreferences,
   GitIdentity,
   HistoryEntry,
-  PullRequestReviewEvent,
   RepositoryState,
-  ReviewAssistantRequest,
   ReviewSource,
   SharedWalkthroughSnapshot,
   TerminalHelperStatus,
@@ -151,9 +135,6 @@ const emptyFiles: ReadonlyArray<ChangedFile> = [];
 const walkthroughCodeViewBottomInset = 96;
 const disableCodeViewWorkerPool = process.env.NODE_ENV === 'test';
 type MainMode = 'review' | 'commit';
-const CODE_FONT_SIZE_DEFAULT = 13;
-const CODE_FONT_SIZE_MAX = 32;
-const CODE_FONT_SIZE_MIN = 10;
 
 const getFailedSectionLoadState = (section: DiffSection): DiffSection =>
   isPatchOnlyDiffSection(section)
@@ -176,13 +157,6 @@ const getFailedSectionLoadState = (section: DiffSection): DiffSection =>
 const getPreferencesFromConfig = ({ settings }: CodiffConfig): CodiffPreferences => ({
   ...settings,
 });
-
-const normalizeCodeFontSizePreference = (size: number) =>
-  Number.isFinite(size)
-    ? Math.min(CODE_FONT_SIZE_MAX, Math.max(CODE_FONT_SIZE_MIN, Math.round(size)))
-    : CODE_FONT_SIZE_DEFAULT;
-
-const getCodeFontLineHeight = (size: number) => Math.round((size * 20) / 13);
 
 const ignoreWalkthroughPathScroll = () => {};
 
@@ -234,22 +208,17 @@ const getReloadSourceForLaunch = (
 };
 
 export default function App() {
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [expandedGenerated, setExpandedGenerated] = useState<Set<string>>(() => new Set());
   const [activeDiffSearchMatchIndex, setActiveDiffSearchMatchIndex] = useState(0);
   const [diffSearchFocusRequest, setDiffSearchFocusRequest] = useState(0);
   const [diffSearchQuery, setDiffSearchQuery] = useState('');
   const [diffSearchVisible, setDiffSearchVisible] = useState(false);
   const [loadError, setLoadError] = useState<RepositoryLoadError | null>(null);
-  const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
-  const [focusCommentRequest, setFocusCommentRequest] = useState(0);
   const [gitIdentity, setGitIdentity] = useState<GitIdentity | null>(null);
   const [historyEntries, setHistoryEntries] = useState<ReadonlyArray<HistoryEntry>>([]);
   const [historyHasMore, setHistoryHasMore] = useState(true);
   const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySource, setHistorySource] = useState<ReviewSource | null>(null);
-  const [itemVersionByKey, setItemVersionByKey] = useState<Record<string, number>>({});
   const [localChangesDetected, setLocalChangesDetected] = useState(false);
   const [launchOptions, setLaunchOptions] = useState<CodiffLaunchOptions>(defaultLaunchOptions);
   const [codiffConfig, setCodiffConfig] = useState<CodiffConfig>(createDefaultConfig);
@@ -257,14 +226,7 @@ export default function App() {
   const [agentSkillStatus, setAgentSkillStatus] =
     useState<AgentSkillStatus>(defaultAgentSkillStatus);
   const [preferences, setPreferences] = useState<CodiffPreferences>(defaultPreferences);
-  const [reviewComments, setReviewComments] = useState<ReadonlyArray<ReviewComment>>([]);
-  const [activeReviewCommentDraftState, setActiveReviewCommentDraftState] = useState<Pick<
-    ReviewComment,
-    'body' | 'id'
-  > | null>(null);
   const [reloadDeltaPaths, setReloadDeltaPaths] = useState<ReadonlySet<string>>(() => new Set());
-  const [pullRequestReviewSubmitting, setPullRequestReviewSubmitting] =
-    useState<PullRequestReviewEvent | null>(null);
   const [scrollTarget, setScrollTarget] = useState<ReviewScrollTarget | null>(null);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -272,17 +234,14 @@ export default function App() {
   const [pendingSource, setPendingSource] = useState<ReviewSource | null>(null);
   const [planDocument, setPlanDocument] = useState<CodiffMarkdownDocument | null>(null);
   const [planLoadError, setPlanLoadError] = useState<string | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loadingSectionIds, setLoadingSectionIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('tree');
-  const [sidebarWidth, setSidebarWidth] = useState<number>(() => readSidebarWidth());
   const [state, setState] = useState<RepositoryState | null>(null);
   const [terminalHelperInstalling, setTerminalHelperInstalling] = useState(false);
   const [terminalHelperStatus, setTerminalHelperStatus] = useState<TerminalHelperStatus>(
     defaultTerminalHelperStatus,
   );
-  const [viewed, setViewed] = useState<Record<string, string>>({});
   const [narrativeWalkthrough, setNarrativeWalkthrough] = useState<NarrativeWalkthrough | null>(
     null,
   );
@@ -315,8 +274,6 @@ export default function App() {
   const collapsedRef = useRef<Set<string>>(new Set());
   const expandedGeneratedRef = useRef<Set<string>>(new Set());
   const preferencesRef = useRef<CodiffPreferences>(defaultPreferences);
-  const activeReviewCommentDraftRef = useRef<Pick<ReviewComment, 'body' | 'id'> | null>(null);
-  const reviewCommentsRef = useRef<ReadonlyArray<ReviewComment>>([]);
   const selectedPathRef = useRef<string | null>(null);
   const sidebarModeRef = useRef<SidebarMode>('tree');
   const mainModeRef = useRef<MainMode>('review');
@@ -327,6 +284,70 @@ export default function App() {
   const viewedRef = useRef<Record<string, string>>({});
   const narrativeWalkthroughRef = useRef<NarrativeWalkthrough | null>(null);
   const walkthroughOutdatedPathsRef = useRef<ReadonlySet<string>>(new Set());
+  const persistViewed = useCallback((nextViewed: Record<string, string>) => {
+    const currentState = stateRef.current;
+    if (currentState && usesViewedFileState(currentState.source)) {
+      writeViewed(currentState.root, nextViewed);
+    }
+  }, []);
+  const {
+    bumpItemVersion,
+    collapsed,
+    expandedGenerated,
+    itemVersionByKey,
+    selectedPath,
+    setCollapsed,
+    setExpandedGenerated,
+    setItemVersionByKey,
+    setSelectedPath,
+    setViewed,
+    toggleCollapsed,
+    toggleViewed: toggleReviewViewed,
+    viewed,
+  } = useReviewFileState({ onViewedChange: persistViewed });
+  const toggleViewed = useCallback(
+    (file: ChangedFile, isViewed: boolean, reviewIdentity?: ReviewIdentity) => {
+      if (!stateRef.current) {
+        return;
+      }
+      if (reviewIdentity) {
+        toggleReviewViewed(file, isViewed, reviewIdentity);
+      } else {
+        toggleReviewViewed(file, isViewed);
+      }
+    },
+    [toggleReviewViewed],
+  );
+  const {
+    askCodex,
+    createComment,
+    deleteComment,
+    focusCommentId,
+    focusCommentRequest,
+    hasPendingReviewComments,
+    pullRequestReviewSubmitting,
+    resetCommentFocus,
+    reviewComments,
+    reviewCommentsRef,
+    setReviewComments,
+    submitPullRequestComment,
+    submitPullRequestReview,
+    updateActiveReviewCommentDraft,
+    updateComment,
+  } = useAppReviewComments({
+    isReviewActionDisabled: isPullRequestReviewActionDisabled,
+    onCommentFileChange: bumpItemVersion,
+    stateRef,
+  });
+  const collapseSidebar = useCallback(() => {
+    setSidebarCollapsed(true);
+  }, []);
+  const { resizeSidebar, sidebarWidth } = useResizableSidebar({
+    collapseThreshold: SIDEBAR_COLLAPSE_THRESHOLD,
+    onCollapse: collapseSidebar,
+    onWidthCommit: writeSidebarWidth,
+    readWidth: readSidebarWidth,
+  });
   const navigationResetKey = state ? `${state.root}:${getSourceKey(state.source)}` : '';
   const narrativeNavigation = useNarrativeNavigation(
     narrativeWalkthrough,
@@ -347,13 +368,6 @@ export default function App() {
     setHunkNavigation((current) => ({
       direction,
       request: (current?.request ?? 0) + 1,
-    }));
-  }, []);
-
-  const bumpItemVersion = useCallback((key: string) => {
-    setItemVersionByKey((current) => ({
-      ...current,
-      [key]: (current[key] ?? 0) + 1,
     }));
   }, []);
 
@@ -556,7 +570,7 @@ export default function App() {
       );
       return result;
     },
-    [bumpItemVersion],
+    [bumpItemVersion, setCollapsed, setReviewComments, setSelectedPath],
   );
 
   const scrollPathIntoReview = useCallback((path: string, behavior: ReviewScrollBehavior) => {
@@ -616,7 +630,7 @@ export default function App() {
       }
       bumpItemVersion(file.path);
     },
-    [bumpItemVersion],
+    [bumpItemVersion, setCollapsed, setExpandedGenerated, setViewed],
   );
 
   const saveCurrentSourceSession = useCallback(() => {
@@ -635,7 +649,7 @@ export default function App() {
       walkthroughError: walkthroughErrorRef.current,
       walkthroughOutdatedPaths: walkthroughOutdatedPathsRef.current,
     });
-  }, []);
+  }, [reviewCommentsRef]);
 
   useEffect(() => {
     let canceled = false;
@@ -793,8 +807,7 @@ export default function App() {
       setCollapsed(getCollapsedViewedPaths(orderedState.files, nextViewed));
       setExpandedGenerated(new Set());
       setItemVersionByKey({});
-      setFocusCommentId(null);
-      setFocusCommentRequest(0);
+      resetCommentFocus();
       setReloadDeltaPaths(nextReloadDeltaPaths);
       setWalkthroughOutdatedPaths(loadedNarrative ? nextReloadDeltaPaths : new Set());
       setReviewComments(getReviewCommentsFromState(orderedState));
@@ -822,7 +835,16 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [scrollPathIntoReview]);
+  }, [
+    resetCommentFocus,
+    scrollPathIntoReview,
+    setCollapsed,
+    setExpandedGenerated,
+    setItemVersionByKey,
+    setReviewComments,
+    setSelectedPath,
+    setViewed,
+  ]);
 
   useEffect(
     () =>
@@ -1100,37 +1122,22 @@ export default function App() {
       canceled = true;
       removeConfigListener();
     };
-  }, []);
+  }, [
+    setCollapsed,
+    setExpandedGenerated,
+    setItemVersionByKey,
+    setReviewComments,
+    setSelectedPath,
+    setViewed,
+  ]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (preferences.theme === 'system') {
-      root.removeAttribute('data-theme');
-    } else {
-      root.setAttribute('data-theme', preferences.theme);
-    }
-  }, [preferences.theme]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const codeFontFamily = preferences.codeFontFamily.trim();
-    const codeFontSize = normalizeCodeFontSizePreference(preferences.codeFontSize);
-
-    if (codeFontFamily) {
-      root.style.setProperty('--font-diff-mono', `${JSON.stringify(codeFontFamily)}, monospace`);
-    } else {
-      root.style.removeProperty('--font-diff-mono');
-    }
-
-    root.style.setProperty('--font-diff-size', `${codeFontSize}px`);
-    root.style.setProperty('--font-diff-line-height', `${getCodeFontLineHeight(codeFontSize)}px`);
-
-    return () => {
-      root.style.removeProperty('--font-diff-mono');
-      root.style.removeProperty('--font-diff-size');
-      root.style.removeProperty('--font-diff-line-height');
-    };
-  }, [preferences.codeFontFamily, preferences.codeFontSize]);
+  useDocumentAppearance({
+    cleanupCodeFontProperties: true,
+    clearEmptyCodeFontFamily: true,
+    codeFontFamily: preferences.codeFontFamily,
+    codeFontSize: preferences.codeFontSize,
+    theme: preferences.theme,
+  });
 
   useEffect(
     () => () => {
@@ -1162,10 +1169,6 @@ export default function App() {
   }, [expandedGenerated]);
 
   useEffect(() => {
-    reviewCommentsRef.current = reviewComments;
-  }, [reviewComments]);
-
-  useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
 
@@ -1184,7 +1187,7 @@ export default function App() {
       );
     });
     return removeListener;
-  }, []);
+  }, [reviewCommentsRef]);
 
   useEffect(() => {
     void window.codiff.isWindowFullScreen().then(setIsWindowFullScreen, () => {});
@@ -1497,10 +1500,13 @@ export default function App() {
     [diffSearchMatches.length],
   );
 
-  const selectPath = useCallback((path: string) => {
-    setMainMode('review');
-    setSelectedPath(path);
-  }, []);
+  const selectPath = useCallback(
+    (path: string) => {
+      setMainMode('review');
+      setSelectedPath(path);
+    },
+    [setSelectedPath],
+  );
 
   const activatePath = useCallback(
     (path: string) => {
@@ -1508,7 +1514,7 @@ export default function App() {
       setSelectedPath(path);
       scrollPathIntoReview(path, 'smooth');
     },
-    [scrollPathIntoReview],
+    [scrollPathIntoReview, setSelectedPath],
   );
 
   // Refresh the repository state in place after the working tree changed.
@@ -1578,7 +1584,7 @@ export default function App() {
       .catch(() => {
         // Keep the current state; the banner stays up as a retry affordance.
       });
-  }, [bumpItemVersion, historyLimit, pendingSource]);
+  }, [bumpItemVersion, historyLimit, pendingSource, setCollapsed, setSelectedPath]);
 
   // ⌘R / the View menu's "Refresh Changes" item route here from the main
   // process instead of reloading the window.
@@ -1639,8 +1645,7 @@ export default function App() {
       sourceRequestRef.current = request;
       setPendingSource(source);
       setLoadError(null);
-      setFocusCommentId(null);
-      setFocusCommentRequest(0);
+      resetCommentFocus();
       setReloadDeltaPaths(new Set());
       setWalkthroughOutdatedPaths(new Set());
       setDiffSearchQuery('');
@@ -1698,63 +1703,19 @@ export default function App() {
           }
         });
     },
-    [historySource, pendingSource, saveCurrentSourceSession],
+    [
+      historySource,
+      pendingSource,
+      resetCommentFocus,
+      saveCurrentSourceSession,
+      setCollapsed,
+      setExpandedGenerated,
+      setItemVersionByKey,
+      setReviewComments,
+      setSelectedPath,
+      setViewed,
+    ],
   );
-
-  const resizeSidebar = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-
-    const handle = event.currentTarget;
-    const shell = handle.parentElement;
-    if (!shell) {
-      return;
-    }
-
-    const shellLeft = shell.getBoundingClientRect().left;
-    handle.setPointerCapture(event.pointerId);
-    handle.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    let collapsed = false;
-
-    const cleanup = () => {
-      handle.releasePointerCapture(event.pointerId);
-      handle.removeEventListener('pointermove', handleMove);
-      handle.removeEventListener('pointerup', handleEnd);
-      handle.removeEventListener('pointercancel', handleEnd);
-      handle.classList.remove('dragging');
-      document.body.style.cursor = '';
-    };
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      const rawWidth = moveEvent.clientX - shellLeft;
-      if (rawWidth < SIDEBAR_COLLAPSE_THRESHOLD) {
-        // Collapse immediately mid-drag — no resistance, no snap on release
-        collapsed = true;
-        setSidebarCollapsed(true);
-        cleanup();
-        return;
-      }
-      setSidebarWidth(clampSidebarWidth(rawWidth));
-    };
-
-    const handleEnd = () => {
-      cleanup();
-      if (!collapsed) {
-        setSidebarWidth((width) => {
-          writeSidebarWidth(width);
-          return width;
-        });
-      }
-    };
-
-    handle.addEventListener('pointermove', handleMove);
-    handle.addEventListener('pointerup', handleEnd);
-    handle.addEventListener('pointercancel', handleEnd);
-  }, []);
 
   // Ask the connected agent for a narrative walkthrough of the given source.
   // Results are dropped if the reviewer switched sources while it was running.
@@ -1877,38 +1838,6 @@ export default function App() {
     setSidebarMode('tree');
     setMainMode('review');
   }, []);
-
-  const toggleViewed = useCallback(
-    (
-      file: ChangedFile,
-      isViewed: boolean,
-      reviewIdentity: ReviewIdentity = getFileReviewIdentity(file),
-    ) => {
-      const currentState = stateRef.current;
-      if (!currentState) {
-        return;
-      }
-
-      setViewed((current) => {
-        const next = updateReviewIdentityViewed(current, reviewIdentity, isViewed);
-        if (usesViewedFileState(currentState.source)) {
-          writeViewed(currentState.root, next);
-        }
-        return next;
-      });
-
-      setCollapsed((current) => updateReviewIdentityCollapsed(current, reviewIdentity, isViewed));
-      if (!isViewed) {
-        setExpandedGenerated((current) => {
-          const next = new Set(current);
-          next.delete(reviewIdentity.key);
-          return next;
-        });
-      }
-      bumpItemVersion(reviewIdentity.key);
-    },
-    [bumpItemVersion],
-  );
 
   const updateActiveWalkthroughReviewTarget = useCallback(
     (target: WalkthroughReviewTarget | null) => {
@@ -2102,61 +2031,18 @@ export default function App() {
     openDiffSearch,
     openSelectedFile,
     refreshRepository,
+    reviewCommentsRef,
     setFileViewedState,
     toggleSidebar,
     toggleViewed,
     toggleWordWrap,
   ]);
 
-  const toggleCollapsed = useCallback(
-    (file: ChangedFile, isCollapsed: boolean, reviewKey = file.path) => {
-      setCollapsed((current) => {
-        const next = new Set(current);
-        if (isCollapsed) {
-          next.delete(reviewKey);
-        } else {
-          next.add(reviewKey);
-        }
-        return next;
-      });
-      setExpandedGenerated((current) => {
-        const next = new Set(current);
-        if (isCollapsed && isGeneratedWalkthroughFile(file)) {
-          next.add(reviewKey);
-        } else {
-          next.delete(reviewKey);
-        }
-        return next;
-      });
-      bumpItemVersion(reviewKey);
-    },
-    [bumpItemVersion],
-  );
-
   const updateSelectedPathFromScroll = useCallback(
     (viewer: CodeViewInstance) => {
-      if (!visibleFiles.length) {
+      const nextPath = getSelectedPathFromScroll(viewer, visibleFiles, showWhitespace);
+      if (!nextPath) {
         return;
-      }
-
-      const scrollTop = viewer.getScrollTop();
-      const activationTop = scrollTop + DEFAULT_PADDING;
-      let nextPath = visibleFiles[0]?.path ?? null;
-      let nextDistance = Number.NEGATIVE_INFINITY;
-
-      for (const file of visibleFiles) {
-        const section = getFirstVisibleSection(file, showWhitespace);
-        const itemId = section ? getItemId(section) : null;
-        const itemTop = itemId ? viewer.getTopForItem(itemId) : undefined;
-        if (itemTop == null) {
-          continue;
-        }
-
-        const distance = itemTop - activationTop;
-        if (distance <= 0 && distance > nextDistance) {
-          nextDistance = distance;
-          nextPath = file.path;
-        }
       }
 
       const programmaticScrollPath = programmaticScrollPathRef.current;
@@ -2172,301 +2058,9 @@ export default function App() {
         }
       }
 
-      if (nextPath) {
-        setSelectedPath((current) => (current === nextPath ? current : nextPath));
-      }
+      setSelectedPath((current) => (current === nextPath ? current : nextPath));
     },
-    [showWhitespace, visibleFiles],
-  );
-
-  const createComment = useCallback(
-    (comment: Omit<ReviewComment, 'body' | 'id'>) => {
-      const emptyExistingComment = reviewCommentsRef.current.find(
-        (candidate) =>
-          candidate.body.length === 0 && getCommentKey(candidate) === getCommentKey(comment),
-      );
-      if (emptyExistingComment) {
-        setFocusCommentId(emptyExistingComment.id);
-        setFocusCommentRequest((current) => current + 1);
-        return;
-      }
-
-      const emptyDraft = findReusableReviewCommentDraft(
-        reviewCommentsRef.current,
-        activeReviewCommentDraftRef.current,
-      );
-      if (emptyDraft) {
-        const id = crypto.randomUUID();
-        setFocusCommentId(id);
-        setFocusCommentRequest((current) => current + 1);
-        setReviewComments((current) =>
-          current.map((candidate) =>
-            candidate.id === emptyDraft.id
-              ? {
-                  ...comment,
-                  body: '',
-                  id,
-                }
-              : candidate,
-          ),
-        );
-        bumpItemVersion(emptyDraft.filePath);
-        bumpItemVersion(comment.filePath);
-        return;
-      }
-
-      const id = crypto.randomUUID();
-      setFocusCommentId(id);
-      setFocusCommentRequest((current) => current + 1);
-
-      setReviewComments((current) => [
-        ...current,
-        {
-          ...comment,
-          body: '',
-          id,
-        },
-      ]);
-      bumpItemVersion(comment.filePath);
-    },
-    [bumpItemVersion],
-  );
-
-  const updateComment = useCallback((commentId: string, body: string) => {
-    const applyCommentBody = (current: ReadonlyArray<ReviewComment>) => {
-      let changed = false;
-      const next = current.map((comment) => {
-        if (comment.id !== commentId || comment.isReadOnly || comment.body === body) {
-          return comment;
-        }
-        changed = true;
-        return { ...comment, body };
-      });
-      return changed ? next : current;
-    };
-
-    reviewCommentsRef.current = applyCommentBody(reviewCommentsRef.current);
-    setReviewComments(applyCommentBody);
-  }, []);
-
-  const updateActiveReviewCommentDraft = useCallback(
-    (comment: Pick<ReviewComment, 'body' | 'id'> | null) => {
-      activeReviewCommentDraftRef.current = comment;
-      setActiveReviewCommentDraftState((current) => {
-        if (comment == null) {
-          return current == null ? current : null;
-        }
-
-        const body = comment.body.trim().length > 0 ? 'pending' : '';
-        return current?.id === comment.id && current.body === body
-          ? current
-          : { body, id: comment.id };
-      });
-    },
-    [],
-  );
-
-  const deleteComment = useCallback(
-    (commentId: string) => {
-      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
-      updateActiveReviewCommentDraft(null);
-      setFocusCommentId((current) => (current === commentId ? null : current));
-      setReviewComments((current) => current.filter((candidate) => candidate.id !== commentId));
-      if (comment) {
-        bumpItemVersion(comment.filePath);
-      }
-    },
-    [bumpItemVersion, updateActiveReviewCommentDraft],
-  );
-
-  const updateCodexReply = useCallback(
-    (commentId: string, filePath: string, codexReply: NonNullable<ReviewComment['codexReply']>) => {
-      setReviewComments((current) =>
-        current.map((comment) =>
-          comment.id === commentId
-            ? {
-                ...comment,
-                codexReply,
-              }
-            : comment,
-        ),
-      );
-      bumpItemVersion(filePath);
-    },
-    [bumpItemVersion],
-  );
-
-  const updateRemoteSubmit = useCallback(
-    (commentId: string, remoteSubmit: ReviewComment['remoteSubmit']) => {
-      setReviewComments((current) =>
-        current.map((comment) =>
-          comment.id === commentId
-            ? {
-                ...comment,
-                remoteSubmit,
-              }
-            : comment,
-        ),
-      );
-      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
-      if (comment) {
-        bumpItemVersion(comment.filePath);
-      }
-    },
-    [bumpItemVersion],
-  );
-
-  const askCodex = useCallback(
-    (commentId: string) => {
-      const currentState = stateRef.current;
-      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
-      if (
-        !currentState ||
-        !comment ||
-        comment.body.trim().length === 0 ||
-        comment.codexReply?.status === 'loading'
-      ) {
-        return;
-      }
-
-      const request: ReviewAssistantRequest = {
-        comment: {
-          body: comment.body,
-          filePath: comment.filePath,
-          ...(comment.lineNumber != null ? { lineNumber: comment.lineNumber } : {}),
-          sectionId: comment.sectionId,
-          ...(comment.side ? { side: comment.side } : {}),
-          ...getReviewCommentRangeProps(comment),
-        },
-        source: currentState.source,
-      };
-
-      updateCodexReply(comment.id, comment.filePath, { status: 'loading' });
-      void window.codiff
-        .askReviewAssistant(request)
-        .then((result) => {
-          updateCodexReply(
-            comment.id,
-            comment.filePath,
-            result.status === 'ready'
-              ? {
-                  body: result.reply,
-                  status: 'ready',
-                }
-              : {
-                  error: result.reason,
-                  status: 'error',
-                },
-          );
-        })
-        .catch((error: unknown) => {
-          updateCodexReply(comment.id, comment.filePath, {
-            error: error instanceof Error ? error.message : String(error),
-            status: 'error',
-          });
-        });
-    },
-    [updateCodexReply],
-  );
-
-  const submitPullRequestComment = useCallback(
-    (commentId: string) => {
-      const currentState = stateRef.current;
-      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
-      if (
-        currentState?.source.type !== 'pull-request' ||
-        !comment ||
-        comment.body.trim().length === 0 ||
-        comment.remoteSubmit?.status === 'submitting'
-      ) {
-        return;
-      }
-
-      updateRemoteSubmit(comment.id, { status: 'submitting' });
-      updateActiveReviewCommentDraft(null);
-      void window.codiff
-        .submitPullRequestComment({
-          comment: toPullRequestReviewComment(comment),
-          source: currentState.source,
-        })
-        .then((submittedComment) => {
-          setFocusCommentId((current) => (current === comment.id ? null : current));
-          setReviewComments((current) =>
-            current.map((candidate) =>
-              candidate.id === comment.id
-                ? {
-                    author: submittedComment.author,
-                    body: submittedComment.body,
-                    filePath: submittedComment.filePath,
-                    id: submittedComment.id,
-                    isReadOnly: true,
-                    ...(submittedComment.anchor === 'file' ? { anchor: 'file' as const } : {}),
-                    ...(submittedComment.lineNumber != null
-                      ? { lineNumber: submittedComment.lineNumber }
-                      : {}),
-                    sectionId: comment.sectionId,
-                    ...(submittedComment.side ? { side: submittedComment.side } : {}),
-                    ...getReviewCommentRangeProps(submittedComment),
-                    submittedAt: submittedComment.submittedAt,
-                    url: submittedComment.url,
-                  }
-                : candidate,
-            ),
-          );
-          bumpItemVersion(comment.filePath);
-        })
-        .catch((error: unknown) => {
-          updateRemoteSubmit(comment.id, {
-            error: error instanceof Error ? error.message : String(error),
-            status: 'error',
-          });
-        });
-    },
-    [bumpItemVersion, updateActiveReviewCommentDraft, updateRemoteSubmit],
-  );
-
-  const submitPullRequestReview = useCallback(
-    (event: PullRequestReviewEvent, body?: string) => {
-      const currentState = stateRef.current;
-      if (
-        currentState?.source.type !== 'pull-request' ||
-        pullRequestReviewSubmitting ||
-        isPullRequestReviewActionDisabled(currentState.source.reviewStatus, event)
-      ) {
-        return;
-      }
-
-      const pendingComments = getPendingPullRequestReviewComments(
-        reviewCommentsRef.current,
-        activeReviewCommentDraftRef.current,
-      );
-      if (event === 'COMMENT' && pendingComments.length === 0 && !body?.trim()) {
-        return;
-      }
-      const pendingCommentIds = new Set(pendingComments.map((comment) => comment.id));
-      setPullRequestReviewSubmitting(event);
-      return window.codiff
-        .submitPullRequestReview({
-          ...(body ? { body } : {}),
-          comments: pendingComments.map(toPullRequestReviewComment),
-          event,
-          source: currentState.source,
-        })
-        .then(() => {
-          updateActiveReviewCommentDraft(null);
-          setReviewComments((current) =>
-            current.filter((comment) => !pendingCommentIds.has(comment.id)),
-          );
-        })
-        .catch((error: unknown) => {
-          window.alert(error instanceof Error ? error.message : String(error));
-          throw error;
-        })
-        .finally(() => {
-          setPullRequestReviewSubmitting(null);
-        });
-    },
-    [pullRequestReviewSubmitting, updateActiveReviewCommentDraft],
+    [setSelectedPath, showWhitespace, visibleFiles],
   );
 
   const installTerminalHelper = useCallback(() => {
@@ -2700,10 +2294,7 @@ export default function App() {
     sourceDescriptionActions: isPullRequest ? (
       <PullRequestReviewButtons
         disabled={pullRequestReviewSubmitting != null}
-        hasPendingComments={
-          getPendingPullRequestReviewComments(reviewComments, activeReviewCommentDraftState)
-            .length > 0
-        }
+        hasPendingComments={hasPendingReviewComments}
         onSubmitReview={submitPullRequestReview}
         reviewStatus={state.source.type === 'pull-request' ? state.source.reviewStatus : undefined}
         showCommentReview={

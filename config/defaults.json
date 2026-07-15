@@ -31,7 +31,7 @@
     "prevSearchMatch": "Shift+Enter",
     "shortcutsHelp": "Shift+?",
     "submitComment": "Mod+Enter",
-    "toggleSidebar": "Mod+b",
+    "toggleSidebar": "Mod+Shift+b",
     "toggleWordWrap": "Alt+z"
   }
 }

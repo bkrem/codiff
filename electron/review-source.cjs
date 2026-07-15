@@ -134,7 +134,6 @@ const resolveReviewUrl = (repositoryPath, number, provider) => {
 };
 
 module.exports = {
-  parseRemoteUrl,
   parseReviewUrl,
   readReviewRemotes,
   resolveReviewUrl,

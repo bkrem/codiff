@@ -729,20 +729,10 @@ const readMergeRequestImageContent = async (launchPath, source, requestedPath) =
 };
 
 module.exports = {
-  GLAB_NOT_FOUND_CODE,
-  GLAB_NOT_FOUND_MESSAGE,
-  createGlabApiArgs,
   createGitLabPosition,
-  createGitLabDiffLineMap,
-  createMergeRequestSource,
   createMergeRequestFetchRefspecs,
-  getGitLabReviewQuickAction,
-  getGitLabDiscussionReplyEndpoint,
-  getGlabCommand,
   listMergeRequestHistory,
   normalizeGitLabReviewComment,
-  normalizeSubmittedGitLabReviewComment,
-  parseGlabJsonPages,
   parseGitLabMergeRequestUrl,
   readMergeRequestImageContent,
   readMergeRequestState,

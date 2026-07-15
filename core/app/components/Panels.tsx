@@ -377,7 +377,7 @@ const getPullRequestReviewActionTitle = (
   fallback: string,
 ) => getPullRequestReviewActionStatus(reviewStatus, event)?.reason ?? fallback;
 
-export function PullRequestReviewAction({
+function PullRequestReviewAction({
   disabled,
   event,
   hasPendingComments = false,

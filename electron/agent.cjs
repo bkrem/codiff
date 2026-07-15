@@ -198,8 +198,6 @@ const detectInitialAgentBackend = (isAvailable = (agent) => agent.isAvailable())
   listAgents().find(isAvailable)?.id ?? DEFAULT_AGENT_BACKEND;
 
 module.exports = {
-  AGENT_BACKENDS,
-  DEFAULT_AGENT_BACKEND,
   detectInitialAgentBackend,
   getAgentMenuModels,
   getAgent,

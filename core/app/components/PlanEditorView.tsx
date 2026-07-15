@@ -147,7 +147,7 @@ export function PlanCommentCard({
       onPointerDown={onActivate}
     >
       <div className="review-comment">
-        <Avatar fallback={displayName} size="medium" url={author.avatarUrl} />
+        <Avatar name={displayName} size="medium" url={author.avatarUrl} />
         <div className="review-comment-body">
           <div className="review-comment-header plan-comment-header">
             <div className="plan-comment-heading">
@@ -214,7 +214,7 @@ export function PlanCommentCard({
   );
 }
 
-export function PlanCommentRail({
+function PlanCommentRail({
   activeThreadId,
   layoutPass,
   layouts,

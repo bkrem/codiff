@@ -143,7 +143,7 @@ counts; when it is `false`, Codiff hides those changes from the working-tree rev
     "closeSearch": "Escape",
     "submitComment": "Mod+Enter",
     "discardComment": "Escape",
-    "toggleSidebar": "Mod+b",
+    "toggleSidebar": "Mod+Shift+b",
   },
 }
 ```

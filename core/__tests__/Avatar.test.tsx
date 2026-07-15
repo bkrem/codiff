@@ -20,7 +20,7 @@ test('Avatar falls back to initials when the image fails to load', async () => {
     await act(async () => {
       root = createRoot(container);
       root.render(
-        <Avatar fallback="Christoph Nakazawa" size="medium" url="https://example.com/avatar" />,
+        <Avatar name="Christoph Nakazawa" size="medium" url="https://example.com/avatar" />,
       );
     });
 
@@ -45,7 +45,7 @@ test('Avatar retries rendering when the avatar URL changes', async () => {
   try {
     await act(async () => {
       root = createRoot(container);
-      root.render(<Avatar fallback="Reviewer" size="medium" url="https://example.com/first" />);
+      root.render(<Avatar name="Reviewer" size="medium" url="https://example.com/first" />);
     });
 
     await act(async () => {
@@ -55,10 +55,34 @@ test('Avatar retries rendering when the avatar URL changes', async () => {
     expect(container.textContent).toBe('RE');
 
     await act(async () => {
-      root?.render(<Avatar fallback="Reviewer" size="medium" url="https://example.com/second" />);
+      root?.render(<Avatar name="Reviewer" size="medium" url="https://example.com/second" />);
     });
 
     expect(container.querySelector('img')?.getAttribute('src')).toBe('https://example.com/second');
+  } finally {
+    await act(async () => root?.unmount());
+  }
+});
+
+test('Avatar normalizes and limits initials by grapheme', async () => {
+  const container = document.createElement('div');
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+    });
+
+    for (const [name, initials] of [
+      ['E\u0301lodie Durand', 'ÉD'],
+      ['ßa', 'SS'],
+      ['नमस्ते कुमार', 'नकु'],
+    ]) {
+      await act(async () => {
+        root?.render(<Avatar name={name} size="medium" />);
+      });
+      expect(container.textContent).toBe(initials);
+    }
   } finally {
     await act(async () => root?.unmount());
   }

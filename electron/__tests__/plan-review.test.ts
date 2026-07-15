@@ -9,27 +9,25 @@ import type { PlanReview } from '../../core/types.ts';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
-const {
-  getPlanReviewPath,
-  normalizePlanReview,
-  readPlanReview,
-  resolvePlanReviewThreadsAtPath,
-  writePlanReview,
-} = require('../plan-review.cjs') as {
-  getPlanReviewPath: (userDataPath: string, planFile: string) => string;
-  normalizePlanReview: (value: unknown) => PlanReview;
-  readPlanReview: (userDataPath: string, planFile: string) => Promise<PlanReview | null>;
-  resolvePlanReviewThreadsAtPath: (
-    path: string,
-    threadIds: ReadonlyArray<string>,
-    reason: 'agent-handled' | 'anchor-removed',
-  ) => Promise<{
-    missingIds: ReadonlyArray<string>;
-    resolvedIds: ReadonlyArray<string>;
-    review: PlanReview;
-  }>;
-  writePlanReview: (userDataPath: string, planFile: string, review: unknown) => Promise<PlanReview>;
-};
+const { getPlanReviewPath, readPlanReview, resolvePlanReviewThreadsAtPath, writePlanReview } =
+  require('../plan-review.cjs') as {
+    getPlanReviewPath: (userDataPath: string, planFile: string) => string;
+    readPlanReview: (userDataPath: string, planFile: string) => Promise<PlanReview | null>;
+    resolvePlanReviewThreadsAtPath: (
+      path: string,
+      threadIds: ReadonlyArray<string>,
+      reason: 'agent-handled' | 'anchor-removed',
+    ) => Promise<{
+      missingIds: ReadonlyArray<string>;
+      resolvedIds: ReadonlyArray<string>;
+      review: PlanReview;
+    }>;
+    writePlanReview: (
+      userDataPath: string,
+      planFile: string,
+      review: unknown,
+    ) => Promise<PlanReview>;
+  };
 
 const createReview = (body: string): PlanReview => {
   const author = {
@@ -271,10 +269,10 @@ test('cross-process plan review saves preserve concurrent agent resolution', asy
   const modulePath = resolve('electron/plan-review.cjs');
   const writer = `
     const { readFile } = require('node:fs/promises');
-    const { writePlanReviewAtPath } = require(process.argv[1]);
+    const { writePlanReview } = require(process.argv[1]);
     (async () => {
-      const review = JSON.parse(await readFile(process.argv[3], 'utf8'));
-      await writePlanReviewAtPath(process.argv[2], review);
+      const review = JSON.parse(await readFile(process.argv[4], 'utf8'));
+      await writePlanReview(process.argv[2], process.argv[3], review);
     })().catch((error) => {
       console.error(error);
       process.exit(1);
@@ -292,7 +290,7 @@ test('cross-process plan review saves preserve concurrent agent resolution', asy
     await writePlanReview(directory, planFile, review);
     await writeFile(inputPath, `${JSON.stringify(reviewWithNewThread)}\n`);
     await Promise.all([
-      execFileAsync(process.execPath, ['-e', writer, modulePath, reviewPath, inputPath]),
+      execFileAsync(process.execPath, ['-e', writer, modulePath, directory, planFile, inputPath]),
       execFileAsync(process.execPath, ['-e', resolver, modulePath, reviewPath]),
     ]);
 
@@ -339,7 +337,6 @@ test('invalid plan review schemas are rejected on write and read', async () => {
   };
 
   try {
-    expect(() => normalizePlanReview(invalidReview)).toThrow('Invalid plan review.');
     await expect(writePlanReview(directory, planFile, invalidReview)).rejects.toThrow(
       'Invalid plan review.',
     );

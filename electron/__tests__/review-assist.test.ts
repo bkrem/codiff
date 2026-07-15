@@ -1,32 +1,51 @@
 import { createRequire } from 'node:module';
-import { expect, test } from 'vite-plus/test';
+import { expect, test, vi } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const { buildReviewAssistantInput, buildReviewAssistantPrompt, normalizeReviewAssistantReply } =
-  require('../review-assist.cjs') as {
-    buildReviewAssistantInput: (
-      state: unknown,
-      request: unknown,
-    ) => {
-      comment: {
-        anchor?: 'file' | 'line';
-        body: string;
-        filePath: string;
-        lineNumber?: number;
-        side?: string;
-      };
-      focus: {
-        patchExcerpt: string;
-      } | null;
-      source: Record<string, unknown>;
-      walkthroughNote: unknown;
+const { readReviewAssistantReply } = require('../review-assist.cjs') as {
+  readReviewAssistantReply: (
+    state: unknown,
+    request: unknown,
+    agent: unknown,
+    agentOptions: unknown,
+  ) => Promise<{ reply?: string; status: string }>;
+};
+
+const readReply = async (
+  state: unknown,
+  request: unknown,
+  response: unknown = { reply: 'Done.', version: 1 },
+  label = 'Codex',
+) => {
+  const run = vi.fn(async () => JSON.stringify(response));
+  const result = await readReviewAssistantReply(
+    state,
+    request,
+    {
+      isNotFoundError: () => false,
+      label,
+      notFoundCode: 'NOT_FOUND',
+      run,
+    },
+    {},
+  );
+  const prompt = run.mock.calls[0]?.[1] as string;
+  const digest = JSON.parse(prompt.split('Repository change digest:\n')[1] ?? '{}') as {
+    comment: {
+      anchor?: 'file' | 'line';
+      body: string;
+      filePath: string;
+      lineNumber?: number;
+      side?: string;
     };
-    buildReviewAssistantPrompt: (state: unknown, request: unknown) => string;
-    normalizeReviewAssistantReply: (input: unknown) => {
-      reply: string;
-      version: 1;
-    };
+    focus: {
+      patchExcerpt: string;
+    } | null;
+    source: Record<string, unknown>;
+    walkthroughNote: unknown;
   };
+  return { digest, prompt, result };
+};
 
 const createPullRequestAssistantState = (description: string) => ({
   files: [
@@ -63,8 +82,8 @@ const pullRequestAssistantRequest = {
   },
 };
 
-test('builds focused inline review assistant context', () => {
-  const input = buildReviewAssistantInput(
+test('builds focused inline review assistant context', async () => {
+  const { digest } = await readReply(
     {
       files: [
         {
@@ -107,15 +126,15 @@ test('builds focused inline review assistant context', () => {
     },
   );
 
-  expect(input.comment.body).toBe('this feels risky, why is this needed?');
-  expect(input.focus?.patchExcerpt).toContain('+const duplicated = true;');
-  expect(input.walkthroughNote).toMatchObject({
+  expect(digest.comment.body).toBe('this feels risky, why is this needed?');
+  expect(digest.focus?.patchExcerpt).toContain('+const duplicated = true;');
+  expect(digest.walkthroughNote).toMatchObject({
     context: 'Check whether state stays synchronized.',
   });
 });
 
-test('builds file-level review assistant context without inventing a line', () => {
-  const input = buildReviewAssistantInput(
+test('builds file-level review assistant context without inventing a line', async () => {
+  const { digest } = await readReply(
     {
       files: [
         {
@@ -144,23 +163,22 @@ test('builds file-level review assistant context without inventing a line', () =
     },
   );
 
-  expect(input.comment).toMatchObject({
+  expect(digest.comment).toMatchObject({
     anchor: 'file',
     body: 'Why is this file organized this way?',
     filePath: 'src/state.ts',
   });
-  expect(input.comment.lineNumber).toBeUndefined();
-  expect(input.comment.side).toBeUndefined();
-  expect(input.focus?.patchExcerpt).toContain('+const synchronized = true;');
+  expect(digest.comment.lineNumber).toBeUndefined();
+  expect(digest.comment.side).toBeUndefined();
+  expect(digest.focus?.patchExcerpt).toContain('+const synchronized = true;');
 });
 
-test('builds review assistant context with PR descriptions as orientation only', () => {
+test('builds review assistant context with PR descriptions as orientation only', async () => {
   const state = createPullRequestAssistantState('## Intent\n\nKeep reviewers oriented.');
 
-  const input = buildReviewAssistantInput(state, pullRequestAssistantRequest);
-  const prompt = buildReviewAssistantPrompt(state, pullRequestAssistantRequest);
+  const { digest, prompt } = await readReply(state, pullRequestAssistantRequest);
 
-  expect(input.source.description).toBe('## Intent\n\nKeep reviewers oriented.');
+  expect(digest.source.description).toBe('## Intent\n\nKeep reviewers oriented.');
   expect(prompt).toContain('author-written PR/MR intent and orientation');
   expect(prompt).toContain('not proof of behavior');
   expect(prompt).toContain(
@@ -168,32 +186,42 @@ test('builds review assistant context with PR descriptions as orientation only',
   );
 });
 
-test('truncates long PR descriptions in review assistant prompts', () => {
+test('truncates long PR descriptions in review assistant prompts', async () => {
   const state = createPullRequestAssistantState(`${'A'.repeat(4100)}UNTRUNCATED_TAIL`);
 
-  const input = buildReviewAssistantInput(state, pullRequestAssistantRequest);
-  const prompt = buildReviewAssistantPrompt(state, pullRequestAssistantRequest);
+  const { digest, prompt } = await readReply(state, pullRequestAssistantRequest);
 
-  expect(input.source.description).toContain('...[truncated]');
+  expect(digest.source.description).toContain('...[truncated]');
   expect(prompt).toContain('...[truncated]');
   expect(prompt).not.toContain('UNTRUNCATED_TAIL');
 });
 
-test('normalizes review assistant markdown without flattening it', () => {
-  expect(
-    normalizeReviewAssistantReply({
+test('normalizes review assistant markdown without flattening it', async () => {
+  const { result } = await readReply(
+    createPullRequestAssistantState(''),
+    pullRequestAssistantRequest,
+    {
       reply: 'Likely reason:\n\n- Keep state local\n\nSuggested comment: **Why here?**',
       version: 1,
-    }),
-  ).toEqual({
+    },
+  );
+
+  expect(result).toEqual({
     reply: 'Likely reason:\n\n- Keep state local\n\nSuggested comment: **Why here?**',
-    version: 1,
+    status: 'ready',
   });
 });
 
-test('normalizes malformed review assistant replies without exposing raw payloads', () => {
-  expect(normalizeReviewAssistantReply({ text: 'raw model text', version: 1 }, 'Pi')).toEqual({
+test('normalizes malformed review assistant replies without exposing raw payloads', async () => {
+  const { result } = await readReply(
+    createPullRequestAssistantState(''),
+    pullRequestAssistantRequest,
+    { text: 'raw model text', version: 1 },
+    'Pi',
+  );
+
+  expect(result).toEqual({
     reply: 'Pi could not produce a useful reply.',
-    version: 1,
+    status: 'ready',
   });
 });

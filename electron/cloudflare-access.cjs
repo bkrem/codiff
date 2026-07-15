@@ -283,8 +283,4 @@ const createCloudflareAccessClient = ({
   };
 };
 
-module.exports = {
-  createCloudflareAccessClient,
-  getCloudflaredCommand,
-  runCloudflared,
-};
+module.exports = { createCloudflareAccessClient };

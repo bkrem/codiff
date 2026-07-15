@@ -143,7 +143,7 @@ vi.mock('@pierre/diffs/react', async () => {
   };
 });
 
-export const source = { type: 'working-tree' } satisfies ReviewSource;
+const source = { type: 'working-tree' } satisfies ReviewSource;
 
 type ReviewCodeViewHarnessProps = Partial<ComponentProps<typeof ReviewCodeView>> & {
   files: ReadonlyArray<ChangedFile>;

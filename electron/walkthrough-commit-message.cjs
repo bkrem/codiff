@@ -126,10 +126,4 @@ const readCommitMessageReply = async (state, request, agent, agentOptions) => {
   }
 };
 
-module.exports = {
-  buildCommitMessageInput,
-  buildCommitMessagePrompt,
-  commitMessageSchema,
-  normalizeCommitMessageReply,
-  readCommitMessageReply,
-};
+module.exports = { readCommitMessageReply };

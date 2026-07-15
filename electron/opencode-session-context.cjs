@@ -251,8 +251,4 @@ const readOpenCodeSessionContext = async (opencodeSessionId) => {
   };
 };
 
-module.exports = {
-  exportOpenCodeSession,
-  extractSessionMessages,
-  readOpenCodeSessionContext,
-};
+module.exports = { readOpenCodeSessionContext };

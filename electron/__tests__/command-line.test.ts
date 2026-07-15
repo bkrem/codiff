@@ -7,8 +7,25 @@ import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const { getInitialRepositoryPath, parseCommandLineArguments, parseGitHubRemoteUrl } =
+const { getCommandLineLaunchOptions, getCommandLineRepositoryPath, getInitialRepositoryPath } =
   require('../main/command-line.cjs') as {
+    getCommandLineLaunchOptions: (
+      commandLine: ReadonlyArray<string>,
+      fallbackPath?: string,
+    ) => {
+      codexSessionId?: string;
+      planFile?: string;
+      planResultFile?: string;
+      repositoryPathProvided: boolean;
+      source?:
+        | { ref: string; type: 'branch-working-tree' }
+        | { ref: string; type: 'commit' }
+        | { base: string; head: string; symmetric: boolean; type: 'range' }
+        | { type: 'pull-request'; url: string };
+      walkthrough: boolean;
+      walkthroughContext?: unknown;
+    };
+    getCommandLineRepositoryPath: (commandLine: ReadonlyArray<string>) => string | null;
     getInitialRepositoryPath: (
       launchPath: string,
       launchOptions: {
@@ -27,25 +44,13 @@ const { getInitialRepositoryPath, parseCommandLineArguments, parseGitHubRemoteUr
       lastRepositoryPath: string,
       environment?: NodeJS.ProcessEnv,
     ) => string;
-    parseCommandLineArguments: (commandLine: ReadonlyArray<string>) => {
-      launchOptions: {
-        codexSessionId?: string;
-        planFile?: string;
-        planResultFile?: string;
-        repositoryPathProvided: boolean;
-        source?:
-          | { ref: string; type: 'branch-working-tree' }
-          | { ref: string; type: 'commit' }
-          | { base: string; head: string; symmetric: boolean; type: 'range' }
-          | { type: 'pull-request'; url: string };
-        walkthrough: boolean;
-        walkthroughContext?: unknown;
-      };
-      pullRequestNumber: number | null;
-      repositoryPath: string | null;
-    };
-    parseGitHubRemoteUrl: (value: string) => { owner: string; repo: string } | null;
   };
+
+const readCommandLine = (commandLine: ReadonlyArray<string>) => ({
+  launchOptions: getCommandLineLaunchOptions(commandLine),
+  pullRequestNumber: null,
+  repositoryPath: getCommandLineRepositoryPath(commandLine),
+});
 
 const execFileAsync = promisify(execFile);
 
@@ -60,7 +65,7 @@ const defaultLaunchOptions = {
 
 test('parses the OpenCode agent override', () => {
   expect(
-    parseCommandLineArguments([
+    readCommandLine([
       'codiff',
       '--agent',
       'opencode',
@@ -91,9 +96,7 @@ test.sequential('plan command lines do not inspect Git refs', async () => {
     await chmod(join(fakeBin, 'git'), 0o755);
     process.env.PATH = `${fakeBin}:${previousPath ?? ''}`;
 
-    expect(
-      parseCommandLineArguments(['codiff', '--plan-file', planFile, 'workspace']),
-    ).toMatchObject({
+    expect(readCommandLine(['codiff', '--plan-file', planFile, 'workspace'])).toMatchObject({
       launchOptions: {
         planFile,
         repositoryPathProvided: true,
@@ -108,9 +111,7 @@ test.sequential('plan command lines do not inspect Git refs', async () => {
 });
 
 test('parses commit and walkthrough command-line options', () => {
-  expect(
-    parseCommandLineArguments(['codiff', '--walkthrough', '--commit', 'HEAD', '/repo']),
-  ).toEqual({
+  expect(readCommandLine(['codiff', '--walkthrough', '--commit', 'HEAD', '/repo'])).toEqual({
     launchOptions: {
       repositoryPathProvided: true,
       source: {
@@ -126,7 +127,7 @@ test('parses commit and walkthrough command-line options', () => {
 
 test('parses plan handoff command-line options', () => {
   expect(
-    parseCommandLineArguments([
+    readCommandLine([
       'codiff',
       '--plan-file',
       '/tmp/plan.md',
@@ -146,7 +147,7 @@ test('parses plan handoff command-line options', () => {
 });
 
 test('parses positional HEAD revisions as commit sources', () => {
-  expect(parseCommandLineArguments(['codiff', 'HEAD'])).toEqual({
+  expect(readCommandLine(['codiff', 'HEAD'])).toEqual({
     launchOptions: {
       repositoryPathProvided: false,
       source: {
@@ -159,7 +160,7 @@ test('parses positional HEAD revisions as commit sources', () => {
     repositoryPath: null,
   });
 
-  expect(parseCommandLineArguments(['codiff', 'HEAD^1', '/repo'])).toEqual({
+  expect(readCommandLine(['codiff', 'HEAD^1', '/repo'])).toEqual({
     launchOptions: {
       repositoryPathProvided: true,
       source: {
@@ -185,7 +186,7 @@ test('parses plain refs as branch sources', async () => {
     await git(repositoryPath, ['checkout', '-b', 'feature']);
     process.chdir(repositoryPath);
 
-    expect(parseCommandLineArguments(['codiff', 'feature'])).toEqual({
+    expect(readCommandLine(['codiff', 'feature'])).toEqual({
       launchOptions: {
         repositoryPathProvided: false,
         source: {
@@ -198,7 +199,7 @@ test('parses plain refs as branch sources', async () => {
       repositoryPath: null,
     });
 
-    expect(parseCommandLineArguments(['codiff', 'feature', repositoryPath])).toEqual({
+    expect(readCommandLine(['codiff', 'feature', repositoryPath])).toEqual({
       launchOptions: {
         repositoryPathProvided: true,
         source: {
@@ -227,7 +228,7 @@ test('parses missing plain refs in Git repositories as branch sources', async ()
     await git(repositoryPath, ['commit', '--allow-empty', '-m', 'initial commit']);
     process.chdir(repositoryPath);
 
-    expect(parseCommandLineArguments(['codiff', 'definitely-missing-branch'])).toEqual({
+    expect(readCommandLine(['codiff', 'definitely-missing-branch'])).toEqual({
       launchOptions: {
         repositoryPathProvided: false,
         source: {
@@ -240,9 +241,7 @@ test('parses missing plain refs in Git repositories as branch sources', async ()
       repositoryPath: null,
     });
 
-    expect(
-      parseCommandLineArguments(['codiff', 'definitely-missing-branch', repositoryPath]),
-    ).toEqual({
+    expect(readCommandLine(['codiff', 'definitely-missing-branch', repositoryPath])).toEqual({
       launchOptions: {
         repositoryPathProvided: true,
         source: {
@@ -276,14 +275,12 @@ test('parses hex-like refs as commits before branches', async () => {
     await git(repositoryPath, ['branch', shortHash]);
     process.chdir(repositoryPath);
 
-    expect(parseCommandLineArguments(['codiff', shortHash]).launchOptions.source).toEqual({
+    expect(readCommandLine(['codiff', shortHash]).launchOptions.source).toEqual({
       ref: shortHash,
       type: 'commit',
     });
 
-    expect(
-      parseCommandLineArguments(['codiff', '--branch', shortHash]).launchOptions.source,
-    ).toEqual({
+    expect(readCommandLine(['codiff', '--branch', shortHash]).launchOptions.source).toEqual({
       ref: shortHash,
       type: 'branch-working-tree',
     });
@@ -325,7 +322,7 @@ test('parses Codex walkthrough seed command-line options', async () => {
     );
 
     expect(
-      parseCommandLineArguments([
+      readCommandLine([
         'codiff',
         '--walkthrough',
         '--codex-session',
@@ -365,7 +362,7 @@ test('parses Codex walkthrough seed command-line options', async () => {
 
 test('parses Codex session ids without creating walkthrough context', () => {
   expect(
-    parseCommandLineArguments([
+    readCommandLine([
       'codiff',
       '--walkthrough',
       '--codex-session',
@@ -379,33 +376,9 @@ test('parses Codex session ids without creating walkthrough context', () => {
   });
 });
 
-test('parses pull request markers without resolving the repository remote', () => {
-  expect(parseCommandLineArguments(['codiff', 'pr', '12', '/repo'])).toMatchObject({
-    launchOptions: {
-      repositoryPathProvided: true,
-      source: undefined,
-      walkthrough: false,
-    },
-    pullRequestNumber: 12,
-    repositoryPath: '/repo',
-  });
-});
-
-test('parses hash-prefixed pull request marker values', () => {
-  expect(parseCommandLineArguments(['codiff', 'pr', '#12', '/repo'])).toMatchObject({
-    launchOptions: {
-      repositoryPathProvided: true,
-      source: undefined,
-      walkthrough: false,
-    },
-    pullRequestNumber: 12,
-    repositoryPath: '/repo',
-  });
-});
-
 test('parses full GitHub pull request URLs as launch sources', () => {
   expect(
-    parseCommandLineArguments(['codiff', 'https://github.com/nkzw-tech/codiff/pull/11', '/repo'])
+    readCommandLine(['codiff', 'https://github.com/nkzw-tech/codiff/pull/11', '/repo'])
       .launchOptions.source,
   ).toEqual({
     provider: 'github',
@@ -414,13 +387,46 @@ test('parses full GitHub pull request URLs as launch sources', () => {
   });
 });
 
+test('resolves GitHub and GitLab review markers through repository remotes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-review-markers-'));
+  const githubRepo = join(directory, 'github');
+  const gitlabRepo = join(directory, 'gitlab');
+
+  try {
+    await Promise.all([mkdir(githubRepo), mkdir(gitlabRepo)]);
+    await git(githubRepo, ['init']);
+    await git(githubRepo, ['remote', 'add', 'origin', 'git@github.com:nkzw-tech/codiff.git']);
+    await git(gitlabRepo, ['init']);
+    await git(gitlabRepo, [
+      'remote',
+      'add',
+      'origin',
+      'ssh://git@gitlab.example.com/group/subgroup/project.git',
+    ]);
+
+    expect(getCommandLineLaunchOptions(['codiff', 'pr', '12', githubRepo]).source).toEqual({
+      provider: 'github',
+      type: 'pull-request',
+      url: 'https://github.com/nkzw-tech/codiff/pull/12',
+    });
+    expect(getCommandLineLaunchOptions(['codiff', 'pr', '#12', githubRepo]).source).toEqual({
+      provider: 'github',
+      type: 'pull-request',
+      url: 'https://github.com/nkzw-tech/codiff/pull/12',
+    });
+    expect(getCommandLineLaunchOptions(['codiff', 'mr', '23', gitlabRepo]).source).toEqual({
+      provider: 'gitlab',
+      type: 'pull-request',
+      url: 'https://gitlab.example.com/group/subgroup/project/-/merge_requests/23',
+    });
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test('parses GitLab merge request markers and nested URLs', () => {
-  expect(parseCommandLineArguments(['codiff', 'mr', '23', '/repo'])).toMatchObject({
-    pullRequestNumber: 23,
-    pullRequestProvider: 'gitlab',
-  });
   expect(
-    parseCommandLineArguments([
+    readCommandLine([
       'codiff',
       'https://gitlab.example.com/group/subgroup/project/-/merge_requests/23',
       '/repo',
@@ -430,18 +436,6 @@ test('parses GitLab merge request markers and nested URLs', () => {
     type: 'pull-request',
     url: 'https://gitlab.example.com/group/subgroup/project/-/merge_requests/23',
   });
-});
-
-test('parses GitHub remotes from ssh and https URLs', () => {
-  expect(parseGitHubRemoteUrl('git@github.com:nkzw-tech/codiff.git')).toEqual({
-    owner: 'nkzw-tech',
-    repo: 'codiff',
-  });
-  expect(parseGitHubRemoteUrl('https://github.com/nkzw-tech/codiff.git')).toEqual({
-    owner: 'nkzw-tech',
-    repo: 'codiff',
-  });
-  expect(parseGitHubRemoteUrl('https://example.com/nkzw-tech/codiff.git')).toBeNull();
 });
 
 test('restores the last repository for plain app launches', async () => {
@@ -537,17 +531,20 @@ test('reads base...head and base..head positionals as a range source', async () 
     await git(repositoryPath, ['commit', '--allow-empty', '-m', 'second']);
     await git(repositoryPath, ['branch', 'head']);
 
-    expect(
-      parseCommandLineArguments(['codiff', 'base...head', repositoryPath]).launchOptions.source,
-    ).toEqual({ base: 'base', head: 'head', symmetric: true, type: 'range' });
+    expect(readCommandLine(['codiff', 'base...head', repositoryPath]).launchOptions.source).toEqual(
+      { base: 'base', head: 'head', symmetric: true, type: 'range' },
+    );
 
-    expect(
-      parseCommandLineArguments(['codiff', 'base..head', repositoryPath]).launchOptions.source,
-    ).toEqual({ base: 'base', head: 'head', symmetric: false, type: 'range' });
+    expect(readCommandLine(['codiff', 'base..head', repositoryPath]).launchOptions.source).toEqual({
+      base: 'base',
+      head: 'head',
+      symmetric: false,
+      type: 'range',
+    });
 
     // A range whose ends don't resolve is not treated as a source.
     expect(
-      parseCommandLineArguments(['codiff', 'nope...nada', repositoryPath]).launchOptions.source,
+      readCommandLine(['codiff', 'nope...nada', repositoryPath]).launchOptions.source,
     ).toBeUndefined();
   } finally {
     await rm(repositoryPath, { force: true, recursive: true });

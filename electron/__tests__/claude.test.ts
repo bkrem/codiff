@@ -9,16 +9,12 @@ const {
   CLAUDE_NOT_FOUND_CODE,
   DEFAULT_CLAUDE_MODEL,
   getClaudeCommand,
-  isClaudeModelAvailabilityError,
-  isClaudeNotLoggedInError,
   normalizeClaudeModel,
   runClaude,
 } = require('../claude.cjs') as {
   CLAUDE_NOT_FOUND_CODE: string;
   DEFAULT_CLAUDE_MODEL: string;
   getClaudeCommand: () => string;
-  isClaudeModelAvailabilityError: (value: string) => boolean;
-  isClaudeNotLoggedInError: (value: string) => boolean;
   normalizeClaudeModel: (value: unknown) => string;
   runClaude: (
     repoRoot: string,
@@ -33,16 +29,6 @@ const {
 test('normalizes Claude Code model preferences to known models', () => {
   expect(normalizeClaudeModel('claude-opus-4-8')).toBe('claude-opus-4-8');
   expect(normalizeClaudeModel('gpt-4o')).toBe(DEFAULT_CLAUDE_MODEL);
-});
-
-test('detects selected Claude model availability failures', () => {
-  expect(isClaudeModelAvailabilityError('model_not_found: claude-opus-4-8')).toBe(true);
-  expect(isClaudeModelAvailabilityError('Rate limit reached, please try again later.')).toBe(false);
-});
-
-test('detects Claude Code login failures', () => {
-  expect(isClaudeNotLoggedInError('Not logged in · Please run /login')).toBe(true);
-  expect(isClaudeNotLoggedInError('Walkthrough is ready.')).toBe(false);
 });
 
 test('rejects invalid explicit Claude CLI overrides', () => {

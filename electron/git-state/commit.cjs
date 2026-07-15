@@ -699,7 +699,6 @@ const listRepositoryHistory = async (launchPath, limit = 200, ref = 'HEAD') => {
 
 module.exports = {
   listRepositoryHistory,
-  parseCommitNameStatus,
   readBranchImageContent,
   readBranchSectionContent,
   readBranchState,

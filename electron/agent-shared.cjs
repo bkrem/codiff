@@ -225,7 +225,6 @@ module.exports = {
   buildSchemaReminder,
   cleanText,
   findExecutableOnPath,
-  getExecutableNames,
   isExecutableFile,
   normalizeEnum,
   normalizeStructuredOutput,

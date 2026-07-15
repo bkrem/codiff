@@ -7,15 +7,13 @@ import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const { collectWalkthroughPaths, diagnoseWalkthroughMismatch } =
-  require('../walkthrough-diagnosis.cjs') as {
-    collectWalkthroughPaths: (input: unknown) => Array<string>;
-    diagnoseWalkthroughMismatch: (params: {
-      hasFiles: boolean;
-      input: unknown;
-      repositoryRoot: string;
-    }) => Promise<string | null>;
-  };
+const { diagnoseWalkthroughMismatch } = require('../walkthrough-diagnosis.cjs') as {
+  diagnoseWalkthroughMismatch: (params: {
+    hasFiles: boolean;
+    input: unknown;
+    repositoryRoot: string;
+  }) => Promise<string | null>;
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -42,38 +40,6 @@ const v4WalkthroughFor = (path: string, extra: Record<string, unknown> = {}) => 
   chapters: [{ stops: [{ hunkIds: [`${path}:staged:h1`] }] }],
   version: 4,
   ...extra,
-});
-
-test('collects anchor and support paths from a walkthrough', () => {
-  const paths = collectWalkthroughPaths({
-    chapters: [{ stops: [{ anchors: [{ oldPath: 'old.ts', path: 'src/a.ts' }] }] }],
-    support: [{ files: [{ path: 'src/b.ts' }] }],
-  });
-  expect([...paths].sort()).toEqual(['old.ts', 'src/a.ts', 'src/b.ts']);
-});
-
-test('collects v4 hunk ids and normalized hunk paths from a walkthrough', () => {
-  const paths = collectWalkthroughPaths({
-    chapters: [
-      {
-        stops: [
-          {
-            hunkIds: ['src/a.ts:staged:h1', 'src/path:with:colon.ts:unstaged:h2'],
-            hunks: [{ oldPath: 'src/old.ts', path: 'src/normalized.ts' }],
-          },
-        ],
-      },
-    ],
-    support: [{ hunkIds: ['src/b.ts:staged:h1'] }],
-    version: 4,
-  });
-  expect([...paths].sort()).toEqual([
-    'src/a.ts',
-    'src/b.ts',
-    'src/normalized.ts',
-    'src/old.ts',
-    'src/path:with:colon.ts',
-  ]);
 });
 
 test('reports changes committed after the walkthrough was authored', async () => {

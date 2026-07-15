@@ -12,10 +12,8 @@ const {
   OPENCODE_NOT_FOUND_CODE,
   OPENCODE_TIMEOUT_MS,
   getOpenCodeCommand,
-  isOpenCodeModelAvailabilityError,
   isOpenCodeNotFoundError,
   normalizeOpenCodeModel,
-  normalizeOpenCodeOutput,
   renderOpenCodeCommand,
   runOpenCode,
 } = require('../opencode.cjs') as {
@@ -25,10 +23,8 @@ const {
   OPENCODE_NOT_FOUND_CODE: string;
   OPENCODE_TIMEOUT_MS: number;
   getOpenCodeCommand: () => string;
-  isOpenCodeModelAvailabilityError: (value: unknown) => boolean;
   isOpenCodeNotFoundError: (error: unknown) => boolean;
   normalizeOpenCodeModel: (value: unknown) => string;
-  normalizeOpenCodeOutput: (output: string, schema: unknown) => string;
   renderOpenCodeCommand: (template: string, model: unknown) => string;
   runOpenCode: (
     repoRoot: string,
@@ -87,18 +83,6 @@ test('renders the selected model into the managed OpenCode command', () => {
   ).toThrow('exactly one');
 });
 
-test('detects OpenCode model availability errors', () => {
-  expect(isOpenCodeModelAvailabilityError('Model not found: anthropic/missing')).toBe(true);
-  expect(isOpenCodeModelAvailabilityError('ProviderModelNotFoundError')).toBe(true);
-  expect(isOpenCodeModelAvailabilityError('unknown model anthropic/missing')).toBe(true);
-  expect(isOpenCodeModelAvailabilityError('You do not have access to model openai/gpt-5.5')).toBe(
-    true,
-  );
-  expect(isOpenCodeModelAvailabilityError('provider capacity exceeded')).toBe(false);
-  expect(isOpenCodeModelAvailabilityError('repository request returned 404')).toBe(false);
-  expect(isOpenCodeModelAvailabilityError('model request returned status 404')).toBe(true);
-});
-
 test('detects OpenCode-not-found errors and invalid overrides', () => {
   expect(isOpenCodeNotFoundError({ code: OPENCODE_NOT_FOUND_CODE })).toBe(true);
   expect(isOpenCodeNotFoundError({ code: 'ENOENT' })).toBe(true);
@@ -115,15 +99,6 @@ test('detects OpenCode-not-found errors and invalid overrides', () => {
       process.env.CODIFF_OPENCODE_PATH = previousOpenCodePath;
     }
   }
-});
-
-test('normalizes OpenCode JSON text events', () => {
-  const output = [
-    JSON.stringify({ part: { id: 'step', text: 'Working...' }, type: 'text' }),
-    JSON.stringify({ part: { id: 'answer', text: '{"reply":"Done."}' }, type: 'text' }),
-  ].join('\n');
-
-  expect(normalizeOpenCodeOutput(output, { required: ['reply'] })).toBe('{"reply":"Done."}');
 });
 
 test('runs OpenCode as an external read-only call', async () => {

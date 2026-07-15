@@ -954,9 +954,6 @@ const readNarrativeWalkthrough = async (
 module.exports = {
   buildNarrativeWalkthroughPrompt,
   getNarrativeWalkthroughCacheKey,
-  getNarrativeWalkthroughTimeoutMs,
-  LARGE_WALKTHROUGH_HUNK_THRESHOLD,
-  narrativeWalkthroughResponseSchema,
   narrativeWalkthroughSchema,
   normalizeNarrativeWalkthrough,
   readNarrativeWalkthrough,

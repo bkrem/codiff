@@ -239,7 +239,7 @@ function CommentComposer({
       }}
     >
       <div className="review-comment">
-        <Avatar fallback={displayName} size="medium" url={identity?.gravatarUrl} />
+        <Avatar name={displayName} size="medium" url={identity?.gravatarUrl} />
         <div className="review-comment-body">
           <div className="review-comment-header plan-comment-header">
             <div className="plan-comment-heading">
@@ -345,7 +345,7 @@ function SharedPlanMessage({
 
   return (
     <div className={`review-comment plan-comment-message${editing ? ' editing' : ''}`}>
-      <Avatar fallback={displayName} size="medium" url={message.author.avatarUrl} />
+      <Avatar name={displayName} size="medium" url={message.author.avatarUrl} />
       <div className="review-comment-body">
         <div
           className={`review-comment-header plan-comment-header${

@@ -147,7 +147,4 @@ const diagnoseWalkthroughMismatch = async ({ repositoryRoot, input, hasFiles }) 
   return `These changes were committed since the walkthrough was authored — most recently in ${commitLabel}. The walkthrough is anchored to uncommitted working-tree changes, which are now gone, so it no longer matches. Open that commit to review the changes.`;
 };
 
-module.exports = {
-  collectWalkthroughPaths,
-  diagnoseWalkthroughMismatch,
-};
+module.exports = { diagnoseWalkthroughMismatch };

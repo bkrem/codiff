@@ -1,3 +1,7 @@
+import { ArrowsClockwiseIcon as ArrowsClockwise } from '@phosphor-icons/react/ArrowsClockwise';
+import { CheckIcon as Check } from '@phosphor-icons/react/Check';
+import { GitBranchIcon as GitBranch } from '@phosphor-icons/react/GitBranch';
+import { XIcon as X } from '@phosphor-icons/react/X';
 import { init as initGhostty, Terminal } from 'ghostty-web';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -12,7 +16,6 @@ import type {
   WalkthroughCommitRequest,
   WalkthroughCommitResult,
 } from '../../../types.ts';
-import { ArrowsClockwise, Check, GitBranch, X } from './icons.tsx';
 import { ChapterIcon, WalkthroughLineCount } from './parts.tsx';
 
 export type CommitHandler = (request: WalkthroughCommitRequest) => Promise<WalkthroughCommitResult>;

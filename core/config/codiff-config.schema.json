@@ -173,7 +173,7 @@
         },
         "toggleSidebar": {
           "type": "string",
-          "default": "Mod+b",
+          "default": "Mod+Shift+b",
           "description": "Toggle the sidebar between expanded and collapsed states."
         },
         "toggleWordWrap": {

@@ -212,6 +212,5 @@ const mergeWalkthroughContexts = (providedContext, sessionContext) => {
 
 module.exports = {
   mergeWalkthroughContexts,
-  normalizeWalkthroughContext,
   readWalkthroughContext,
 };

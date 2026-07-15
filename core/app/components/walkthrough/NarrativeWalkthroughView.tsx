@@ -1,3 +1,12 @@
+import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react/ArrowLeft';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react/ArrowRight';
+import { ArrowsClockwiseIcon as ArrowsClockwise } from '@phosphor-icons/react/ArrowsClockwise';
+import { CaretLeftIcon as CaretLeft } from '@phosphor-icons/react/CaretLeft';
+import { CaretRightIcon as CaretRight } from '@phosphor-icons/react/CaretRight';
+import { CheckIcon as Check } from '@phosphor-icons/react/Check';
+import { GitBranchIcon as GitBranch } from '@phosphor-icons/react/GitBranch';
+import { PathIcon as Path } from '@phosphor-icons/react/Path';
+import { ShareNetworkIcon as ShareNetwork } from '@phosphor-icons/react/ShareNetwork';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ReviewIdentity } from '../../../lib/app-types.ts';
 import type { ReviewScrollBehavior } from '../../../lib/app-types.ts';
@@ -23,17 +32,6 @@ import {
   type CommitMessageHandler,
   type CommitOutputSubscriber,
 } from './CommitView.tsx';
-import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowsClockwise,
-  CaretLeft,
-  CaretRight,
-  Check,
-  GitBranch,
-  Path,
-  ShareNetwork,
-} from './icons.tsx';
 import { ChapterIcon, ImportancePill, Narration } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 

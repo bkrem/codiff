@@ -1,23 +1,28 @@
-import claudeIconUrl from '../../../assets/claude.svg';
-import codexIconUrl from '../../../assets/codex.svg';
-import opencodeIconUrl from '../../../assets/opencode.svg';
-import piIconUrl from '../../../assets/pi.svg';
+import { BugIcon as Bug } from '@phosphor-icons/react/Bug';
+import { FlaskIcon as Flask } from '@phosphor-icons/react/Flask';
+import { GearIcon as Gear } from '@phosphor-icons/react/Gear';
+import { PathIcon as Path } from '@phosphor-icons/react/Path';
+import { ReadCvLogoIcon as Doc } from '@phosphor-icons/react/ReadCvLogo';
+import { WrenchIcon as Wrench } from '@phosphor-icons/react/Wrench';
+import type { ComponentType } from 'react';
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import { importanceLabel } from '../../../lib/narrative-walkthrough.ts';
-import type { NarrativeWalkthrough, WalkthroughIcon, WalkthroughStop } from '../../../types.ts';
-import { chapterIcons } from './icons.tsx';
+import type { WalkthroughIcon, WalkthroughStop } from '../../../types.ts';
 
-export function AgentLogo({ agentId }: { agentId: NarrativeWalkthrough['agent'] }) {
-  const iconUrl =
-    agentId === 'pi'
-      ? piIconUrl
-      : agentId === 'opencode'
-        ? opencodeIconUrl
-        : agentId === 'claude'
-          ? claudeIconUrl
-          : codexIconUrl;
-  return <img alt="" draggable={false} src={iconUrl} />;
-}
+type IconProps = {
+  size?: number;
+  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
+};
+
+const chapterIcons: Record<WalkthroughIcon, ComponentType<IconProps>> = {
+  beaker: Flask,
+  bug: Bug,
+  doc: Doc,
+  flask: Flask,
+  gear: Gear,
+  path: Path,
+  wrench: Wrench,
+};
 
 export function ChapterIcon({ icon, size = 13 }: { icon: WalkthroughIcon; size?: number }) {
   const Icon = chapterIcons[icon] ?? chapterIcons.path;

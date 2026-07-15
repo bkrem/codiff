@@ -80,7 +80,4 @@ const createSystemCertificateTrust = (tlsImpl = tls) => {
 
 const trustSystemCertificates = createSystemCertificateTrust();
 
-module.exports = {
-  createSystemCertificateTrust,
-  trustSystemCertificates,
-};
+module.exports = { trustSystemCertificates };

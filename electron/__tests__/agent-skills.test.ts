@@ -5,33 +5,27 @@ import { join } from 'node:path';
 import { expect, test, vi } from 'vite-plus/test';
 
 const require = createRequire(import.meta.url);
-const { buildInstallSkillMenuItem, getAgentSkill, listAgentSkills } =
-  require('../agent-skills.cjs') as {
-    buildInstallSkillMenuItem: (
-      install: (skill: { id: string }, browserWindow: unknown) => void,
-    ) => {
+const { buildInstallSkillMenuItem, listAgentSkills } = require('../agent-skills.cjs') as {
+  buildInstallSkillMenuItem: (install: (skill: { id: string }, browserWindow: unknown) => void) => {
+    label: string;
+    submenu: Array<{
+      click: (menuItem: unknown, browserWindow: unknown) => void;
       label: string;
-      submenu: Array<{
-        click: (menuItem: unknown, browserWindow: unknown) => void;
-        label: string;
-      }>;
-    };
-    getAgentSkill: (id: unknown) =>
-      | {
-          agentLabel: string;
-          files?: ReadonlyArray<{
-            legacyManagedMarkers?: ReadonlyArray<string>;
-            managedMarker: string;
-            sourceSubdir: string;
-            targetSubdir: string;
-          }>;
-          id: string;
-          label: string;
-          targets: ReadonlyArray<{ sourceSubdir: string; targetSubdir: string }>;
-        }
-      | undefined;
-    listAgentSkills: () => ReadonlyArray<{ id: string }>;
+    }>;
   };
+  listAgentSkills: () => ReadonlyArray<{
+    agentLabel: string;
+    files?: ReadonlyArray<{
+      legacyManagedMarkers?: ReadonlyArray<string>;
+      managedMarker: string;
+      sourceSubdir: string;
+      targetSubdir: string;
+    }>;
+    id: string;
+    label: string;
+    targets: ReadonlyArray<{ sourceSubdir: string; targetSubdir: string }>;
+  }>;
+};
 const { createSkillInstaller } = require('../main/agent-skill.cjs') as {
   createSkillInstaller: (options: {
     app: {
@@ -43,7 +37,7 @@ const { createSkillInstaller } = require('../main/agent-skill.cjs') as {
     };
     renderManagedFile?: (file: { sourceSubdir: string }, template: string) => string;
     root: string;
-    skill: NonNullable<ReturnType<typeof getAgentSkill>>;
+    skill: ReturnType<typeof listAgentSkills>[number];
   }) => {
     getStatus: () => { installed: boolean; path: string };
     install: () => Promise<boolean>;
@@ -139,7 +133,7 @@ test('installs the OpenCode skill into its global skills directory', async () =>
   const target = join(home, '.config/opencode/skills/codiff');
   const commandSource = join(root, 'opencode/commands/codiff.md');
   const commandTarget = join(home, '.config/opencode/commands/codiff.md');
-  const skill = getAgentSkill('opencode');
+  const skill = listAgentSkills().find(({ id }) => id === 'opencode');
   let model = 'anthropic/claude-sonnet-4-6';
 
   try {
@@ -187,7 +181,7 @@ test('does not replace a user-authored OpenCode command', async () => {
   const source = join(root, 'opencode/skills/codiff');
   const commandSource = join(root, 'opencode/commands/codiff.md');
   const commandTarget = join(home, '.config/opencode/commands/codiff.md');
-  const skill = getAgentSkill('opencode');
+  const skill = listAgentSkills().find(({ id }) => id === 'opencode');
 
   try {
     await mkdir(source, { recursive: true });

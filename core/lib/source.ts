@@ -73,8 +73,7 @@ const sourceCapabilitiesByType = {
   },
 } satisfies Record<ReviewSource['type'], SourceCapabilities>;
 
-export const getSourceCapabilities = (source: ReviewSource) =>
-  sourceCapabilitiesByType[source.type];
+const getSourceCapabilities = (source: ReviewSource) => sourceCapabilitiesByType[source.type];
 
 export const getSourceKey = (source: ReviewSource) =>
   source.type === 'commit'
