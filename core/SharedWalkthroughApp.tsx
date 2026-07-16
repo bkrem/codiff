@@ -1,5 +1,6 @@
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Button } from './app/components/Button.tsx';
 import { ReviewFileTree } from './app/components/FileTree.tsx';
 import {
   MergeRequestCommentsView,
@@ -50,6 +51,8 @@ import { isGeneratedWalkthroughFile } from './lib/narrative-walkthrough-diff.js'
 import {
   getPendingPullRequestReviewComments,
   getReviewCommentsFromState,
+  mergeReviewComments,
+  toSubmittedReviewComment,
   toPullRequestReviewComment,
 } from './lib/review-comments.ts';
 import { getSelectedPathFromScroll } from './lib/review-scroll.ts';
@@ -151,6 +154,7 @@ export type ReviewSurfaceProps = {
     walkthroughError?: string | null;
     walkthroughStatus: ReviewWalkthroughStatus;
   };
+  onDeleteShare?: () => Promise<void> | void;
   onModeChange?: (mode: ReviewMode) => void;
   providerLabel?: string;
   settingsBar?: ReactNode;
@@ -166,6 +170,7 @@ export function ReviewSurface({
   gitIdentity = null,
   initialMode,
   interactive,
+  onDeleteShare,
   onModeChange,
   providerLabel = 'provider',
   settingsBar,
@@ -175,6 +180,19 @@ export function ReviewSurface({
   title,
 }: ReviewSurfaceProps) {
   const canComment = commenting?.canComment ?? Boolean(interactive);
+  const deleteShare = useCallback(async () => {
+    if (
+      !onDeleteShare ||
+      !window.confirm('Delete this shared walkthrough? This cannot be undone.')
+    ) {
+      return;
+    }
+    try {
+      await onDeleteShare();
+    } catch (error: unknown) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  }, [onDeleteShare]);
   const submitReviewComment = commenting?.onSubmitComment ?? interactive?.onSubmitComment;
   const submitGeneralDiscussion =
     commenting?.onSubmitGeneralComment ?? interactive?.onSubmitGeneralComment;
@@ -236,7 +254,7 @@ export function ReviewSurface({
   const [localReviewComments, setLocalReviewComments] =
     useState<ReadonlyArray<ReviewComment>>(emptyReviewComments);
   const reviewComments = useMemo(
-    () => [...visibleSnapshotReviewComments, ...localReviewComments],
+    () => mergeReviewComments(visibleSnapshotReviewComments, localReviewComments),
     [localReviewComments, visibleSnapshotReviewComments],
   );
   const {
@@ -265,6 +283,7 @@ export function ReviewSurface({
     [snapshot.repository.generalComments],
   );
   const generalCommentCount = generalComments.length;
+  const showCommentsTab = Boolean(commenting || interactive || generalCommentCount > 0);
   const [generalCommentDraft, setGeneralCommentDraft] = useState('');
   const [generalCommentEditDraft, setGeneralCommentEditDraft] = useState('');
   const [editingGeneralCommentId, setEditingGeneralCommentId] = useState<string | null>(null);
@@ -384,6 +403,9 @@ export function ReviewSurface({
       const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
       if (comment?.isReadOnly && comment.canDelete && commenting?.onDeleteComment) {
         updateActiveReviewCommentDraft(null);
+        setLocalReviewComments((current) =>
+          current.filter((candidate) => candidate.id !== commentId),
+        );
         void commenting.onDeleteComment(commentId).catch((error: unknown) => {
           window.alert(error instanceof Error ? error.message : String(error));
         });
@@ -414,11 +436,18 @@ export function ReviewSurface({
             : candidate,
         ),
       );
-      void submitReviewComment(toPullRequestReviewComment(comment))
-        .then(() => {
+      void submitReviewComment(
+        toPullRequestReviewComment(comment, { includeSectionId: commenting != null }),
+      )
+        .then((submittedComment) => {
           clearCommentFocus(commentId);
           setLocalReviewComments((current) =>
-            current.filter((candidate) => candidate.id !== commentId),
+            current.flatMap((candidate) => {
+              if (candidate.id !== commentId) {
+                return [candidate];
+              }
+              return [toSubmittedReviewComment(submittedComment, candidate)];
+            }),
           );
           bumpItemVersion(comment.filePath);
         })
@@ -442,6 +471,7 @@ export function ReviewSurface({
     [
       bumpItemVersion,
       clearCommentFocus,
+      commenting,
       reviewCommentsRef,
       submitReviewComment,
       updateActiveReviewCommentDraft,
@@ -468,7 +498,9 @@ export function ReviewSurface({
       }
       const pendingIds = new Set(pendingComments.map((comment) => comment.id));
       setPullRequestReviewSubmitting(event);
-      const formattedComments = pendingComments.map(toPullRequestReviewComment);
+      const formattedComments = pendingComments.map((comment) =>
+        toPullRequestReviewComment(comment),
+      );
       const submission = body
         ? interactive.onSubmitReview(event, formattedComments, body)
         : interactive.onSubmitReview(event, formattedComments);
@@ -714,7 +746,6 @@ export function ReviewSurface({
     gitIdentity,
     hunkNavigation: null,
     initialMarkdownPreviewSectionIds,
-    isPullRequest: snapshot.repository.source.type === 'pull-request',
     isReadOnly: !canComment,
     itemVersionByKey,
     keymap,
@@ -736,6 +767,7 @@ export function ReviewSurface({
     searchQuery: '',
     showWhitespace: snapshot.preferences.showWhitespace,
     source: snapshot.repository.source,
+    supportsReviewCommentActions: submitReviewComment != null,
     theme: snapshot.preferences.theme,
     viewed,
     wordWrap: snapshot.preferences.wordWrap,
@@ -909,7 +941,11 @@ export function ReviewSurface({
             value={fileSearchQuery}
           />
         </div>
-        <div aria-label="Review order" className="sidebar-mode-toggle" role="tablist">
+        <div
+          aria-label="Review order"
+          className={`sidebar-mode-toggle${showCommentsTab ? ' sidebar-mode-toggle-with-comments' : ''}`}
+          role="tablist"
+        >
           <button
             aria-selected={sidebarMode === 'tree'}
             onClick={() => changeSidebarMode('tree')}
@@ -926,7 +962,7 @@ export function ReviewSurface({
           >
             Walkthrough
           </button>
-          {commenting || interactive || generalCommentCount > 0 ? (
+          {showCommentsTab ? (
             <button
               aria-label={
                 generalCommentCount > 0 ? `Comments (${generalCommentCount})` : 'Comments'
@@ -990,8 +1026,21 @@ export function ReviewSurface({
             </div>
           </div>
         )}
-        {settingsBar || showTotalLineCount ? (
+        {onDeleteShare || settingsBar || showTotalLineCount ? (
           <div className="sidebar-settings-bar">
+            {onDeleteShare ? (
+              <Button
+                action={deleteShare}
+                aria-label="Delete shared walkthrough"
+                pendingPlaceholder="…"
+                size="icon"
+                title="Delete shared walkthrough"
+                type="button"
+                variant="destructive"
+              >
+                <Trash2 aria-hidden size={16} />
+              </Button>
+            ) : null}
             {settingsBar}
             {showTotalLineCount ? (
               <DiffLineCountBadge

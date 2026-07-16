@@ -1,4 +1,13 @@
 .enum_manifest.json
+.fate/
+.void/
+.wrangler/
+**/.fate/
+**/.void/
+**/.wrangler/
+**/.dev.vars
+**/.env.local
+**/.env.*.local
 .cache/
 .pnpm-debug.log
 /node_modules/

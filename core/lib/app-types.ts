@@ -142,7 +142,11 @@ export type SourceSession = {
   selectedPath: string | null;
   viewed: Record<string, string>;
   walkthroughError: WalkthroughError | null;
-  walkthroughOutdatedPaths: ReadonlySet<string>;
+  walkthroughFiles: ReadonlyArray<{
+    fingerprint: string;
+    path: string;
+    status: ChangedFile['status'];
+  }>;
 };
 
 export type RepositoryLoadError = {

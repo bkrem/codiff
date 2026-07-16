@@ -10,6 +10,8 @@ import {
   getReloadHistorySource,
   getReloadMainMode,
   getReloadSelectionPath,
+  haveChangedFiles,
+  haveReloadedFilesChanged,
   writeReloadSelection,
 } from '../lib/reload-selection.ts';
 import type { ChangedFile, GitFileStatus, RepositoryState, ReviewSource } from '../types.ts';
@@ -142,6 +144,18 @@ test('changed paths cover added, modified, and status-changed files', () => {
     new Set(['src/changed.ts', 'src/status.ts', 'src/new.ts']),
   );
   expect(getChangedPaths(previous, previous)).toEqual(new Set());
+});
+
+test('file change detection includes removed files', () => {
+  const unchangedFile = file('src/unchanged.ts', 'same');
+  const removedFile = file('src/removed.ts', 'old');
+  const previousState = state([unchangedFile, removedFile]);
+
+  expect(haveChangedFiles(previousState.files, [unchangedFile])).toBe(true);
+  expect(haveChangedFiles(previousState.files, previousState.files)).toBe(false);
+
+  writeReloadSelection(previousState, removedFile.path);
+  expect(haveReloadedFilesChanged(consumeReloadSelection(), state([unchangedFile]))).toBe(true);
 });
 
 test('reload selection is ignored when it belongs to another repository source', () => {

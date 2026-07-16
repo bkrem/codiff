@@ -17,6 +17,8 @@ change. Codiff owns the format and authoring guidance, so this skill only handle
 
 - Use **plan share mode** for `$codiff plan share`, or when a share request is clearly about the
   proposed plan in the current discussion.
+- When the user says `$codiff share public` or otherwise explicitly requests the public service,
+  add `--public` to the share command. Do not mention or document this flag otherwise.
 - Use **walkthrough share mode** when the request includes `share`, `upload`, `link`, `URL`, `web`,
   or browser wording and is about code changes. An underspecified `$codiff share` defaults to a
   walkthrough.
@@ -68,7 +70,7 @@ approval document.
 2. Upload it without opening a blocking desktop handoff:
 
    ```bash
-   node scripts/open-codiff.mjs --plan /tmp/codiff-plan-<id>.md --share
+   node scripts/open-codiff.mjs --plan /tmp/codiff-plan-<id>.md --share [--public]
    ```
 
 3. Add `--open` only when the user explicitly asks to open the shared plan in a browser.
@@ -101,7 +103,7 @@ approval document.
    Share mode:
 
    ```bash
-   node scripts/open-codiff.mjs --share --file /tmp/codiff-walkthrough-<id>.json /path/to/repository
+   node scripts/open-codiff.mjs --share [--public] --file /tmp/codiff-walkthrough-<id>.json /path/to/repository
    ```
 
    Share and open in the default browser:

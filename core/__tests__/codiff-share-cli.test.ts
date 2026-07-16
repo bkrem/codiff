@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { tmpdir, userInfo } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
@@ -186,16 +186,16 @@ test('headless plan share works outside Git without invoking it', async () => {
   const fakeBin = join(directory, 'bin');
   const gitMarker = join(directory, 'git-invoked');
   const planFile = join(directory, 'plan.md');
-  type PlanUploadedBody = {
-    snapshot: {
-      document: { content: string; name: string; title: string };
-      kind: string;
-      review: { threads: ReadonlyArray<unknown>; version: number };
-      source?: { agent?: string; sessionId?: string };
-      version: number;
-    };
-    uploader: { email?: string; name: string };
+  type PlanSnapshot = {
+    document: { content: string; name: string; title: string };
+    kind: string;
+    review: { threads: ReadonlyArray<unknown>; version: number };
+    source?: { agent?: string; sessionId?: string };
+    version: number;
   };
+  type PlanUploadedBody =
+    | PlanSnapshot
+    | { snapshot: PlanSnapshot; uploader: { email?: string; name: string } };
   let uploadedBody: PlanUploadedBody | null = null;
 
   const server = createServer((request, response) => {
@@ -268,10 +268,11 @@ test('headless plan share works outside Git without invoking it', async () => {
     );
 
     const body = uploadedBody as PlanUploadedBody | null;
+    const snapshot = body && 'snapshot' in body ? body.snapshot : body;
     expect(stdout.trim()).toBe(`${origin}/p/shared-plan`);
-    expect(body?.uploader).toEqual({ name: userInfo().username });
+    expect(body && 'uploader' in body ? body.uploader : undefined).toBeUndefined();
     expect(await readFile(gitMarker, 'utf8').catch(() => null)).toBeNull();
-    expect(body?.snapshot).toMatchObject({
+    expect(snapshot).toMatchObject({
       document: {
         content: '# Ship plan sharing\n\nKeep walkthroughs stable.\n',
         name: 'plan.md',

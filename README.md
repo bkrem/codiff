@@ -268,4 +268,6 @@ vp build
 
 ## Contributing
 
-Found an issue, or want to improve something? Open a PR.
+Found an issue, or want to improve something? See the
+[contributing guide](CONTRIBUTING.md) for local application and public web
+service setup.

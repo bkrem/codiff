@@ -57,6 +57,11 @@ const flagDefinitions = [
     type: 'boolean',
   },
   {
+    hidden: true,
+    name: 'public',
+    type: 'boolean',
+  },
+  {
     description: 'Show version number and exit.',
     name: 'version',
     short: 'v',
@@ -147,10 +152,12 @@ const blueBold = (text) => `${ansi.blueBold}${text}${ansi.reset}`;
 const gray = (text) => `${ansi.gray}${text}${ansi.reset}`;
 
 export const formatHelpText = (version) => {
-  const flagLines = flagDefinitions.map(({ argument, description, name, short }) => {
-    const label = `--${name}${argument ? ` ${argument}` : ''}${short ? `, -${short}` : ''}`;
-    return { description, label };
-  });
+  const flagLines = flagDefinitions
+    .filter(({ hidden }) => !hidden)
+    .map(({ argument, description, name, short }) => {
+      const label = `--${name}${argument ? ` ${argument}` : ''}${short ? `, -${short}` : ''}`;
+      return { description, label };
+    });
   const flagPad = Math.max(...flagLines.map(({ label }) => label.length)) + 2;
 
   const examplePad = Math.max(...usageExamples.map(({ command }) => command.length)) + 2;
@@ -426,6 +433,7 @@ export const parseArguments = (args) => {
     pullRequestNumber,
     ...(pullRequestProvider ? { pullRequestProvider } : {}),
     pullRequestUrl,
+    ...(values.public === true ? { public: true } : {}),
     requestedPath: resolve(requestedPath ?? process.cwd()),
     ...(values.share === true ? { share: true } : {}),
     version: values.version === true,

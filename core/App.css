@@ -376,6 +376,12 @@ html[data-codiff-platform='darwin'] .plan-header {
   grid-template-columns: minmax(0, 1fr) max-content;
 }
 
+.plan-file-actions {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
 .codiff-plan-editor {
   --mdx-editor-annotation-active-bg: color-mix(in srgb, var(--sidebar-ref) 32%, transparent);
   --mdx-editor-annotation-bg: color-mix(in srgb, var(--sidebar-ref) 22%, transparent);
@@ -1152,6 +1158,7 @@ html[data-codiff-platform='darwin'] .sidebar {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.share-shell .sidebar-mode-toggle-with-comments,
 .merge-request-shell .sidebar-mode-toggle {
   grid-template-columns: minmax(42px, 0.65fr) minmax(88px, 1.05fr) minmax(102px, 1.3fr);
 }
@@ -4104,6 +4111,7 @@ diffs-container .review-comment-thread {
     padding-inline: 8px;
   }
 
+  .share-shell .sidebar-mode-toggle-with-comments,
   .merge-request-shell .sidebar-mode-toggle {
     grid-template-columns: minmax(40px, 0.65fr) minmax(78px, 1.05fr) minmax(88px, 1.3fr);
   }

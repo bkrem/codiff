@@ -1,4 +1,3 @@
-import { ArrowsClockwiseIcon as ArrowsClockwise } from '@phosphor-icons/react/ArrowsClockwise';
 import { CheckIcon as Check } from '@phosphor-icons/react/Check';
 import { GitBranchIcon as GitBranch } from '@phosphor-icons/react/GitBranch';
 import { PathIcon as Path } from '@phosphor-icons/react/Path';
@@ -89,13 +88,11 @@ function TocStop({
 }
 
 function SupportingFilesStop({
-  changedPaths,
   files,
   navigation,
   showWhitespace,
   walkthroughView,
 }: {
-  changedPaths?: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
   navigation: NarrativeNavigation;
   showWhitespace: boolean;
@@ -105,7 +102,7 @@ function SupportingFilesStop({
     files,
     walkthroughView,
     showWhitespace,
-  ).filter((file) => !changedPaths?.has(file.path));
+  );
   if (walkthroughView.support.length === 0 && uncoveredFiles.length === 0) {
     return null;
   }
@@ -150,58 +147,8 @@ function SupportingFilesStop({
   );
 }
 
-function ChangedFilesStop({
-  changedPaths,
-  files,
-  navigation,
-  showWhitespace,
-  walkthroughView,
-}: {
-  changedPaths?: ReadonlySet<string>;
-  files: ReadonlyArray<ChangedFile>;
-  navigation: NarrativeNavigation;
-  showWhitespace: boolean;
-  walkthroughView: WalkthroughView;
-}) {
-  const changedFiles = getUncoveredWalkthroughFileLineItems(
-    files,
-    walkthroughView,
-    showWhitespace,
-  ).filter((file) => changedPaths?.has(file.path));
-  if (changedFiles.length === 0) {
-    return null;
-  }
-  const fileRows = formatWalkthroughFileLineRows(changedFiles);
-  return (
-    <div className="wt-toc-chapter">
-      <div className="wt-toc-chapter-head">
-        <span className="wt-toc-chapter-icon">
-          <ArrowsClockwise size={15} />
-        </span>
-        <span className="wt-toc-chapter-title">Changed</span>
-      </div>
-      <div className="wt-toc-stops">
-        <button
-          className="wt-toc-stop"
-          onClick={navigation.openSupport}
-          title="Changed after the walkthrough was generated"
-          type="button"
-        >
-          <span className="wt-toc-rail">
-            <span className="wt-toc-node" />
-          </span>
-          <span className="wt-toc-main">
-            <TocFileRows files={fileRows} />
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function NarrativeSidebar({
   allowCommit = true,
-  changedPaths,
   files,
   navigation,
   onShareWalkthrough,
@@ -210,7 +157,6 @@ export function NarrativeSidebar({
   walkthrough,
 }: {
   allowCommit?: boolean;
-  changedPaths?: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
   navigation: NarrativeNavigation;
   onShareWalkthrough?: () => void;
@@ -264,14 +210,6 @@ export function NarrativeSidebar({
           </div>
         ))}
         <SupportingFilesStop
-          changedPaths={changedPaths}
-          files={files}
-          navigation={navigation}
-          showWhitespace={showWhitespace}
-          walkthroughView={walkthroughView}
-        />
-        <ChangedFilesStop
-          changedPaths={changedPaths}
           files={files}
           navigation={navigation}
           showWhitespace={showWhitespace}

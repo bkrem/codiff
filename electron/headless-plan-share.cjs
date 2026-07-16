@@ -1,18 +1,36 @@
 // @ts-check
 
-const { readFileSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
+const { dirname, join, resolve } = require('node:path');
 const { readConfig } = require('./config.cjs');
-const { readLocalIdentity } = require('./local-identity.cjs');
+const { readGitIdentity } = require('./git-state.cjs');
 const { createSharedPlanSnapshot } = require('./shared-plan.cjs');
 const { uploadSnapshot } = require('./headless-walkthrough-share.cjs');
 const { resolvePlanShareTarget } = require('./walkthrough-sharing.cjs');
+
+/** @param {string} repositoryPath */
+const hasGitMetadata = (repositoryPath) => {
+  let current = resolve(repositoryPath);
+  while (true) {
+    if (existsSync(join(current, '.git'))) {
+      return true;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return false;
+    }
+    current = parent;
+  }
+};
 
 /**
  * @param {{
  *   agent?: 'claude' | 'codex' | 'opencode' | 'pi';
  *   codiffVersion: string;
+ *   forcePublic?: boolean;
  *   openExternal: (url: string) => Promise<void>;
  *   planFile: string;
+ *   repositoryPath: string;
  *   serviceUrlOverride?: string;
  *   sessionId?: string;
  * }} options
@@ -20,13 +38,15 @@ const { resolvePlanShareTarget } = require('./walkthrough-sharing.cjs');
 const sharePlanFile = async ({
   agent,
   codiffVersion,
+  forcePublic,
   openExternal,
   planFile,
+  repositoryPath,
   serviceUrlOverride,
   sessionId,
 }) => {
   const config = readConfig();
-  const uploader = readLocalIdentity();
+  const uploader = hasGitMetadata(repositoryPath) ? await readGitIdentity(repositoryPath) : {};
   const content = readFileSync(planFile, 'utf8');
   const review = {
     document: {
@@ -51,7 +71,11 @@ const sharePlanFile = async ({
       sessionId,
       theme: config.settings.theme,
     }),
-    target: resolvePlanShareTarget({ overrideUrl: serviceUrlOverride }),
+    target: resolvePlanShareTarget({
+      email: uploader.email,
+      forcePublic,
+      overrideUrl: serviceUrlOverride,
+    }),
     uploader,
   });
 };

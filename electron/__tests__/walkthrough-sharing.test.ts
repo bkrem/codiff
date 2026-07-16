@@ -4,32 +4,36 @@ import { expect, test } from 'vite-plus/test';
 const require = createRequire(import.meta.url);
 const { resolvePlanShareTarget, resolveWalkthroughShareTarget } =
   require('../walkthrough-sharing.cjs') as {
-    resolvePlanShareTarget: (options: { overrideUrl?: string }) => {
+    resolvePlanShareTarget: (options: {
+      email?: string;
+      forcePublic?: boolean;
+      overrideUrl?: string;
+    }) => {
       authenticated: boolean;
       internal: boolean;
       serviceUrl: string;
     };
     resolveWalkthroughShareTarget: (options: {
       email?: string;
+      forcePublic?: boolean;
       overrideUrl?: string;
-      username?: string;
     }) => {
       authenticated: boolean;
       internal: boolean;
       serviceUrl: string;
-    } | null;
+    };
   };
 
-test('routes plan shares to the authenticated service without Git identity', () => {
+test('routes users without a Cloudflare Git identity to the public service', () => {
   expect(resolvePlanShareTarget({})).toEqual({
-    authenticated: true,
-    internal: true,
-    serviceUrl: 'https://codiff.cloudflare.dev',
-  });
-  expect(resolvePlanShareTarget({ overrideUrl: 'http://localhost:6001/' })).toEqual({
     authenticated: false,
-    internal: true,
-    serviceUrl: 'http://localhost:6001',
+    internal: false,
+    serviceUrl: 'https://codiff.dev',
+  });
+  expect(resolvePlanShareTarget({ overrideUrl: 'http://localhost:6002/' })).toEqual({
+    authenticated: false,
+    internal: false,
+    serviceUrl: 'http://localhost:6002',
   });
 });
 
@@ -37,7 +41,6 @@ test('routes Cloudflare git identities to the authenticated internal service', (
   expect(
     resolveWalkthroughShareTarget({
       email: 'Ada@Cloudflare.com ',
-      username: 'ada',
     }),
   ).toEqual({
     authenticated: true,
@@ -46,25 +49,23 @@ test('routes Cloudflare git identities to the authenticated internal service', (
   });
 });
 
-test('routes cpojer to the existing public service', () => {
+test('routes all external Git identities to the public service', () => {
   expect(
     resolveWalkthroughShareTarget({
       email: 'cpojer@example.com',
-      username: 'cpojer',
     }),
   ).toEqual({
     authenticated: false,
     internal: false,
-    serviceUrl: 'https://api.codiff.dev',
+    serviceUrl: 'https://codiff.dev',
   });
 });
 
-test('keeps explicit development servers unauthenticated', () => {
+test('keeps explicit development servers unauthenticated and preserves audience routing', () => {
   expect(
     resolveWalkthroughShareTarget({
       email: 'ada@cloudflare.com',
       overrideUrl: 'http://localhost:6001/',
-      username: 'ada',
     }),
   ).toEqual({
     authenticated: false,
@@ -73,11 +74,15 @@ test('keeps explicit development servers unauthenticated', () => {
   });
 });
 
-test('does not expose sharing to other users', () => {
+test('forces Cloudflare Git identities to the public service when requested', () => {
   expect(
     resolveWalkthroughShareTarget({
-      email: 'ada@example.com',
-      username: 'ada',
+      email: 'ada@cloudflare.com',
+      forcePublic: true,
     }),
-  ).toBeNull();
+  ).toEqual({
+    authenticated: false,
+    internal: false,
+    serviceUrl: 'https://codiff.dev',
+  });
 });

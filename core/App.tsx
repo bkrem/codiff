@@ -68,6 +68,8 @@ import {
   getReloadHistorySource,
   getReloadMainMode,
   getReloadSelectionPath,
+  haveChangedFiles,
+  haveReloadedFilesChanged,
   writeReloadSelection,
 } from './lib/reload-selection.ts';
 import { resolveReviewCommandTarget } from './lib/review-command-target.ts';
@@ -144,26 +146,6 @@ const getCollapsedViewedPaths = (
   new Set(
     files.filter((file) => viewedFiles[file.path] === file.fingerprint).map((file) => file.path),
   );
-
-const updateWalkthroughOutdatedPathsForRefresh = (
-  current: ReadonlySet<string>,
-  changedPaths: ReadonlySet<string>,
-  files: ReadonlyArray<ChangedFile>,
-) => {
-  const filePaths = new Set(files.map((file) => file.path));
-  const next = new Set<string>();
-  for (const path of current) {
-    if (filePaths.has(path)) {
-      next.add(path);
-    }
-  }
-  for (const path of changedPaths) {
-    if (filePaths.has(path)) {
-      next.add(path);
-    }
-  }
-  return next;
-};
 
 const getReloadSourceForLaunch = (
   reloadSelection: ReturnType<typeof consumeReloadSelection>,
@@ -304,7 +286,7 @@ export default function App() {
     narrativeWalkthroughRef,
     openCommitView,
     plainCommitModel,
-    regenerateWalkthrough,
+    refreshWalkthroughForState,
     setMainMode,
     setNarrativeWalkthrough,
     setShareWalkthroughEnabled,
@@ -312,7 +294,6 @@ export default function App() {
     setWalkthroughError,
     setWalkthroughFileError,
     setWalkthroughLoading,
-    setWalkthroughOutdatedPaths,
     setWalkthroughUnread,
     showNarrativeWalkthrough,
     showPlainCommitView,
@@ -326,8 +307,6 @@ export default function App() {
     walkthroughErrorRef,
     walkthroughFileError,
     walkthroughLoading,
-    walkthroughOutdatedPaths,
-    walkthroughOutdatedPathsRef,
     walkthroughProgress,
     walkthroughSharing,
     walkthroughUnread,
@@ -530,14 +509,15 @@ export default function App() {
           }
 
           const changedPaths = getChangedPaths(currentState.files, orderedState.files);
+          const walkthroughNeedsRefresh = haveChangedFiles(currentState.files, orderedState.files);
           stateGenerationRef.current += 1;
           stateRef.current = orderedState;
           setState(orderedState);
           setLocalChangesDetected(false);
           setReviewComments(getReviewCommentsFromState(orderedState));
-          setWalkthroughOutdatedPaths((current) =>
-            updateWalkthroughOutdatedPathsForRefresh(current, changedPaths, orderedState.files),
-          );
+          if (walkthroughNeedsRefresh) {
+            refreshWalkthroughForState(orderedState);
+          }
           setCollapsed((current) => {
             const next = new Set(current);
             for (const path of changedPaths) {
@@ -571,13 +551,7 @@ export default function App() {
       );
       return result;
     },
-    [
-      bumpItemVersion,
-      setCollapsed,
-      setReviewComments,
-      setSelectedPath,
-      setWalkthroughOutdatedPaths,
-    ],
+    [bumpItemVersion, refreshWalkthroughForState, setCollapsed, setReviewComments, setSelectedPath],
   );
 
   const scrollPathIntoReview = useCallback((path: string, behavior: ReviewScrollBehavior) => {
@@ -611,14 +585,13 @@ export default function App() {
       selectedPath: selectedPathRef.current,
       viewed: viewedRef.current,
       walkthroughError: walkthroughErrorRef.current,
-      walkthroughOutdatedPaths: walkthroughOutdatedPathsRef.current,
+      walkthroughFiles: currentState.files.map(({ fingerprint, path, status }) => ({
+        fingerprint,
+        path,
+        status,
+      })),
     });
-  }, [
-    narrativeWalkthroughRef,
-    reviewCommentsRef,
-    walkthroughErrorRef,
-    walkthroughOutdatedPathsRef,
-  ]);
+  }, [narrativeWalkthroughRef, reviewCommentsRef, walkthroughErrorRef]);
 
   useEffect(() => {
     let canceled = false;
@@ -687,6 +660,9 @@ export default function App() {
       }
 
       const filesPresent = orderedState.files.length > 0;
+      const reloadSelectedPath = getReloadSelectionPath(reloadSelection, orderedState);
+      const nextReloadDeltaPaths = getReloadDeltaPaths(reloadSelection, orderedState);
+      const reloadFilesChanged = haveReloadedFilesChanged(reloadSelection, orderedState);
       // A pre-authored `--walkthrough-file` is an explicit request to open in
       // walkthrough mode, even without the `-w` flag. Treat it like `walkthrough`
       // so the file is actually loaded instead of being silently ignored.
@@ -711,7 +687,9 @@ export default function App() {
       // committed) rather than us guessing in the renderer.
       const shouldFetchNarrative = shouldLoadNarrative || walkthroughFilePath != null;
       const narrativeResult = shouldFetchNarrative
-        ? await window.codiff.getNarrativeWalkthrough(orderedState.source)
+        ? reloadFilesChanged && walkthroughFilePath == null
+          ? await window.codiff.getNarrativeWalkthrough(orderedState.source, { force: true })
+          : await window.codiff.getNarrativeWalkthrough(orderedState.source)
         : null;
       if (canceled) {
         return;
@@ -749,8 +727,6 @@ export default function App() {
       const nextViewed = usesViewedFileState(orderedState.source)
         ? readViewed(orderedState.root)
         : {};
-      const reloadSelectedPath = getReloadSelectionPath(reloadSelection, orderedState);
-      const nextReloadDeltaPaths = getReloadDeltaPaths(reloadSelection, orderedState);
       // Reopen the commit view after a reload, but only while it would still be
       // openable (same conditions as openCommitView); e.g. once the commit
       // lands the working tree may be empty and we fall back to the review.
@@ -768,6 +744,7 @@ export default function App() {
       setHistoryLimit(HISTORY_PAGE_SIZE);
       setHistorySource(nextHistorySource ?? null);
       stateGenerationRef.current += 1;
+      stateRef.current = orderedState;
       setState(orderedState);
       setLoadError(null);
       setCollapsed(getCollapsedViewedPaths(orderedState.files, nextViewed));
@@ -775,7 +752,6 @@ export default function App() {
       setItemVersionByKey({});
       resetCommentFocus();
       setReloadDeltaPaths(nextReloadDeltaPaths);
-      setWalkthroughOutdatedPaths(loadedNarrative ? nextReloadDeltaPaths : new Set());
       setReviewComments(getReviewCommentsFromState(orderedState));
       setViewed(nextViewed);
       const nextSelectedPath = reloadSelectedPath ?? orderedState.files[0]?.path ?? null;
@@ -816,7 +792,6 @@ export default function App() {
     setWalkthroughError,
     setWalkthroughFileError,
     setWalkthroughLoading,
-    setWalkthroughOutdatedPaths,
     startWalkthroughLoading,
   ]);
 
@@ -1052,8 +1027,13 @@ export default function App() {
           const nextViewed = usesViewedFileState(orderedState.source)
             ? readViewed(orderedState.root)
             : {};
+          const walkthroughNeedsRefresh = haveChangedFiles(currentState.files, orderedState.files);
 
+          stateRef.current = orderedState;
           setState(orderedState);
+          if (walkthroughNeedsRefresh) {
+            refreshWalkthroughForState(orderedState);
+          }
           setSelectedPath(nextSelectedPath);
           setReloadDeltaPaths(new Set());
           setItemVersionByKey({});
@@ -1079,6 +1059,7 @@ export default function App() {
     setCollapsed,
     setExpandedGenerated,
     setItemVersionByKey,
+    refreshWalkthroughForState,
     setReviewComments,
     setShareWalkthroughEnabled,
     setSelectedPath,
@@ -1305,13 +1286,15 @@ export default function App() {
           files: sortFiles(nextState.files),
         };
         const changedPaths = getChangedPaths(previousState.files, orderedState.files);
+        const walkthroughNeedsRefresh = haveChangedFiles(previousState.files, orderedState.files);
 
         stateGenerationRef.current += 1;
+        stateRef.current = orderedState;
         setState(orderedState);
         setReloadDeltaPaths(changedPaths);
-        setWalkthroughOutdatedPaths((current) =>
-          updateWalkthroughOutdatedPathsForRefresh(current, changedPaths, orderedState.files),
-        );
+        if (walkthroughNeedsRefresh) {
+          refreshWalkthroughForState(orderedState);
+        }
         for (const path of changedPaths) {
           bumpItemVersion(path);
         }
@@ -1346,10 +1329,10 @@ export default function App() {
     historyLimit,
     mainModeRef,
     pendingSource,
+    refreshWalkthroughForState,
     setCollapsed,
     setMainMode,
     setSelectedPath,
-    setWalkthroughOutdatedPaths,
   ]);
 
   // ⌘R / the View menu's "Refresh Changes" item route here from the main
@@ -1386,7 +1369,6 @@ export default function App() {
       setLoadError(null);
       resetCommentFocus();
       setReloadDeltaPaths(new Set());
-      setWalkthroughOutdatedPaths(new Set());
       resetDiffSearch();
       setScrollTarget(null);
       setMainMode('review');
@@ -1414,8 +1396,15 @@ export default function App() {
           const nextCollapsed =
             session?.collapsed ?? getCollapsedViewedPaths(orderedState.files, nextViewed);
           const nextExpandedGenerated = session?.expandedGenerated ?? new Set<string>();
+          const sessionWalkthroughIsCurrent =
+            session?.narrativeWalkthrough != null &&
+            !haveChangedFiles(session.walkthroughFiles, orderedState.files);
+          const nextNarrativeWalkthrough = sessionWalkthroughIsCurrent
+            ? (session?.narrativeWalkthrough ?? null)
+            : null;
 
           stateGenerationRef.current += 1;
+          stateRef.current = orderedState;
           setState(orderedState);
           setHistorySource(getHistorySource(orderedState.source) ?? historySource);
           setCollapsed(new Set(nextCollapsed));
@@ -1423,15 +1412,19 @@ export default function App() {
           setItemVersionByKey({});
           setReviewComments(session?.reviewComments ?? getReviewCommentsFromState(orderedState));
           setReloadDeltaPaths(new Set());
-          setWalkthroughOutdatedPaths(session?.walkthroughOutdatedPaths ?? new Set());
           setViewed(nextViewed);
           setSelectedPath(nextSelectedPath);
-          setNarrativeWalkthrough(session?.narrativeWalkthrough ?? null);
-          setWalkthroughError(session?.walkthroughError ?? null);
+          setNarrativeWalkthrough(nextNarrativeWalkthrough);
+          setWalkthroughError(
+            sessionWalkthroughIsCurrent ? (session.walkthroughError ?? null) : null,
+          );
           setWalkthroughLoading(false);
           setWalkthroughUnread(false);
           setLocalChangesDetected(false);
           setPendingSource(null);
+          if (!sessionWalkthroughIsCurrent) {
+            refreshWalkthroughForState(orderedState, session?.narrativeWalkthrough ?? null);
+          }
         })
         .catch((error: unknown) => {
           if (sourceRequestRef.current === request) {
@@ -1444,6 +1437,7 @@ export default function App() {
     [
       historySource,
       pendingSource,
+      refreshWalkthroughForState,
       resetCommentFocus,
       resetDiffSearch,
       saveCurrentSourceSession,
@@ -1457,7 +1451,6 @@ export default function App() {
       setViewed,
       setWalkthroughError,
       setWalkthroughLoading,
-      setWalkthroughOutdatedPaths,
       setWalkthroughUnread,
     ],
   );
@@ -1652,7 +1645,6 @@ export default function App() {
     focusCommentRequest,
     gitIdentity,
     hunkNavigation,
-    isPullRequest,
     itemVersionByKey,
     keymap: codiffConfig.keymap,
     loadingSectionIds,
@@ -1686,6 +1678,7 @@ export default function App() {
         }
       />
     ) : undefined,
+    supportsReviewCommentActions: isPullRequest,
     theme: preferences.theme,
     viewed,
     wordWrap,
@@ -1860,7 +1853,6 @@ export default function App() {
           viewed={viewed}
           walkthroughError={walkthroughError}
           walkthroughLoading={walkthroughLoading}
-          walkthroughOutdatedPaths={walkthroughOutdatedPaths}
           walkthroughProgress={walkthroughProgress}
           walkthroughUnread={walkthroughUnread}
         />
@@ -1880,16 +1872,13 @@ export default function App() {
           />
         ) : showNarrativeWalkthrough && narrativeWalkthrough ? (
           <NarrativeWalkthroughView
-            changedPaths={walkthroughOutdatedPaths}
             files={state.files}
             navigation={narrativeNavigation}
             onActiveReviewTargetChange={updateActiveWalkthroughReviewTarget}
             onCommit={commitWalkthrough}
             onCommitOutput={subscribeToCommitOutput}
-            onRegenerateWalkthrough={regenerateWalkthrough}
             onShareWalkthrough={enabledShareWalkthrough}
             onUpdateCommitMessage={updateWalkthroughCommitMessage}
-            regenerateDisabled={walkthroughLoading}
             renderDiffBlocks={renderWalkthroughDiffBlocks}
             shareWalkthroughDisabled={walkthroughSharing}
             showWhitespace={showWhitespace}

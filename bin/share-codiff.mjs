@@ -116,14 +116,17 @@ try {
     ? await sharePlanFile({
         agent: parsed.agentBackend ?? undefined,
         codiffVersion: packageJson.version,
+        forcePublic: parsed.public,
         openExternal,
         planFile: planFilePath,
+        repositoryPath: parsed.requestedPath,
         serviceUrlOverride: process.env.CODIFF_SHARE_SERVER_URL,
         sessionId: sessionId ?? undefined,
       })
     : await shareWalkthroughFile({
         agent: parsed.agentBackend ?? undefined,
         codiffVersion: packageJson.version,
+        forcePublic: parsed.public,
         openExternal,
         repositoryPath: parsed.requestedPath,
         serviceUrlOverride: process.env.CODIFF_SHARE_SERVER_URL,

@@ -50,9 +50,6 @@ export function useAppWalkthrough({
     null,
   );
   const [walkthroughLoading, setWalkthroughLoading] = useState(false);
-  const [walkthroughOutdatedPaths, setWalkthroughOutdatedPaths] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const [walkthroughProgress, setWalkthroughProgress] = useState<{
     phase: WalkthroughProgressEvent['phase'] | null;
     responseLabelIndex: number;
@@ -65,7 +62,6 @@ export function useAppWalkthrough({
   const narrativeWalkthroughRef = useRef<NarrativeWalkthrough | null>(null);
   const sidebarModeRef = useRef<SidebarMode>('tree');
   const walkthroughErrorRef = useRef<WalkthroughError | null>(null);
-  const walkthroughOutdatedPathsRef = useRef<ReadonlySet<string>>(new Set());
   const walkthroughRequestRef = useRef(0);
   const navigationResetKey = state ? `${state.root}:${getSourceKey(state.source)}` : '';
   const narrativeNavigation = useNarrativeNavigation(
@@ -85,10 +81,6 @@ export function useAppWalkthrough({
   useEffect(() => {
     narrativeWalkthroughRef.current = narrativeWalkthrough;
   }, [narrativeWalkthrough]);
-
-  useEffect(() => {
-    walkthroughOutdatedPathsRef.current = walkthroughOutdatedPaths;
-  }, [walkthroughOutdatedPaths]);
 
   useEffect(() => {
     walkthroughErrorRef.current = walkthroughError;
@@ -167,7 +159,6 @@ export function useAppWalkthrough({
 
           if (result.status === 'ready') {
             setNarrativeWalkthrough(result.walkthrough);
-            setWalkthroughOutdatedPaths(new Set());
             if (sidebarModeRef.current === 'walkthrough') {
               setSidebarMode('walkthrough');
             } else {
@@ -196,16 +187,30 @@ export function useAppWalkthrough({
     [startWalkthroughLoading, stateGenerationRef, stateRef],
   );
 
-  const regenerateWalkthrough = useCallback(() => {
-    const currentState = stateRef.current;
-    if (!currentState || currentState.files.length === 0 || walkthroughLoading) {
-      return;
-    }
-    loadNarrativeWalkthrough(currentState.source, {
-      force: true,
-      previousWalkthrough: narrativeWalkthroughRef.current ?? undefined,
-    });
-  }, [loadNarrativeWalkthrough, stateRef, walkthroughLoading]);
+  const refreshWalkthroughForState = useCallback(
+    (
+      nextState: RepositoryState,
+      previousWalkthrough: NarrativeWalkthrough | null = narrativeWalkthroughRef.current,
+    ) => {
+      if (sidebarModeRef.current !== 'walkthrough' && previousWalkthrough == null) {
+        return;
+      }
+
+      walkthroughRequestRef.current += 1;
+      setNarrativeWalkthrough(null);
+      setWalkthroughError(null);
+      setWalkthroughLoading(false);
+      if (nextState.files.length === 0) {
+        return;
+      }
+
+      loadNarrativeWalkthrough(nextState.source, {
+        force: true,
+        previousWalkthrough: previousWalkthrough ?? undefined,
+      });
+    },
+    [loadNarrativeWalkthrough],
+  );
 
   const changeSidebarMode = useCallback(
     (mode: SidebarMode) => {
@@ -340,7 +345,7 @@ export function useAppWalkthrough({
     narrativeWalkthroughRef,
     openCommitView,
     plainCommitModel,
-    regenerateWalkthrough,
+    refreshWalkthroughForState,
     setMainMode,
     setNarrativeWalkthrough,
     setShareWalkthroughEnabled,
@@ -348,7 +353,6 @@ export function useAppWalkthrough({
     setWalkthroughError,
     setWalkthroughFileError,
     setWalkthroughLoading,
-    setWalkthroughOutdatedPaths,
     setWalkthroughUnread,
     showNarrativeWalkthrough: narrativeWalkthrough != null && sidebarMode === 'walkthrough',
     showPlainCommitView,
@@ -362,8 +366,6 @@ export function useAppWalkthrough({
     walkthroughErrorRef,
     walkthroughFileError,
     walkthroughLoading,
-    walkthroughOutdatedPaths,
-    walkthroughOutdatedPathsRef,
     walkthroughProgress,
     walkthroughSharing,
     walkthroughUnread,

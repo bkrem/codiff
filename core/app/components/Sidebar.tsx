@@ -52,7 +52,6 @@ export function Sidebar({
   viewed,
   walkthroughError,
   walkthroughLoading,
-  walkthroughOutdatedPaths,
   walkthroughProgress,
   walkthroughUnread,
 }: {
@@ -84,7 +83,6 @@ export function Sidebar({
   viewed: Record<string, string>;
   walkthroughError: WalkthroughError | null;
   walkthroughLoading: boolean;
-  walkthroughOutdatedPaths: ReadonlySet<string>;
   walkthroughProgress: {
     phase: import('../../types.ts').WalkthroughProgressPhase | null;
     responseLabelIndex: number;
@@ -174,7 +172,6 @@ export function Sidebar({
         />
       ) : mode === 'walkthrough' && narrativeWalkthrough ? (
         <NarrativeSidebar
-          changedPaths={walkthroughOutdatedPaths}
           files={commitFiles}
           navigation={narrativeNavigation}
           onShareWalkthrough={onShareWalkthrough}

@@ -4,8 +4,8 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { expect, test } from 'vite-plus/test';
-import { ReviewSurface } from '../SharedWalkthroughApp.tsx';
+import { expect, test, vi } from 'vite-plus/test';
+import { ReviewSurface, type ReviewCommenting } from '../SharedWalkthroughApp.tsx';
 import type { NarrativeWalkthrough, SharedWalkthroughSnapshot } from '../types.ts';
 import { createChangedFile } from './helpers/fixtures.ts';
 import { waitFor } from './helpers/react.tsx';
@@ -49,7 +49,24 @@ const createMarkdownFile = (path = 'README.md') =>
     ],
   }) satisfies SharedWalkthroughSnapshot['files'][number];
 
+const commenting = {
+  canComment: false,
+  onDeleteComment: async () => {},
+  onDeleteGeneralComment: async () => {},
+  onReplyGeneralComment: async () => {},
+  onResolveDiscussion: async () => {},
+  onSignIn: () => {},
+  onSubmitComment: async () => {
+    throw new Error('Not used by this test.');
+  },
+  onSubmitGeneralComment: async () => {},
+  onUpdateComment: async () => {},
+  onUpdateGeneralComment: async () => {},
+} satisfies ReviewCommenting;
+
 test('shared walkthroughs switch between walkthrough and tree review modes', async () => {
+  const onDeleteShare = vi.fn();
+  const confirmDelete = vi.spyOn(window, 'confirm').mockReturnValue(false);
   const file = createChangedFile('src/app.ts');
   const markdownFile = createMarkdownFile();
   const source = { type: 'working-tree' } as const;
@@ -126,7 +143,9 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
   try {
     await act(async () => {
       root = createRoot(container);
-      root.render(<ReviewSurface snapshot={snapshot} />);
+      root.render(
+        <ReviewSurface commenting={commenting} onDeleteShare={onDeleteShare} snapshot={snapshot} />,
+      );
     });
 
     await waitFor(() => {
@@ -135,15 +154,30 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
 
     const searchInput = container.querySelector<HTMLInputElement>('.sidebar-search');
     expect(searchInput).not.toBeNull();
+    const deleteShare = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Delete shared walkthrough"]',
+    );
+    expect(deleteShare?.closest('.sidebar-settings-bar')).not.toBeNull();
+    await act(async () => deleteShare?.click());
+    expect(confirmDelete).toHaveBeenCalledWith(
+      'Delete this shared walkthrough? This cannot be undone.',
+    );
+    expect(onDeleteShare).not.toHaveBeenCalled();
+    confirmDelete.mockReturnValue(true);
+    await act(async () => deleteShare?.click());
+    await waitFor(() => expect(onDeleteShare).toHaveBeenCalledOnce());
     expect(searchInput?.placeholder).toBe('Filter files');
     const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
 
-    const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    expect(tabs).toHaveLength(2);
+    const tablist = container.querySelector('[role="tablist"]');
+    expect(tablist?.classList.contains('sidebar-mode-toggle-with-comments')).toBe(true);
+    const tabs = tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [];
+    expect(tabs).toHaveLength(3);
     expect(tabs[0]?.textContent).toBe('Tree');
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('false');
     expect(tabs[1]?.textContent).toBe('Walkthrough');
     expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+    expect(tabs[2]?.textContent).toBe('Comments');
 
     await act(async () => {
       tabs[0]?.click();

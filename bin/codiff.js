@@ -131,6 +131,7 @@ const run = async () => {
     opencodeSessionId,
     piSessionId,
     planFilePath,
+    public: forcePublic,
     pullRequestBranch,
     pullRequestNumber,
     pullRequestProvider,
@@ -177,8 +178,10 @@ const run = async () => {
         const url = await sharePlanFile({
           agent: agentBackend ?? undefined,
           codiffVersion: packageJson.version,
+          forcePublic,
           openExternal,
           planFile: planFilePath,
+          repositoryPath: requestedPath,
           serviceUrlOverride: process.env.CODIFF_SHARE_SERVER_URL,
           sessionId: sessionId ?? undefined,
         });
@@ -202,6 +205,7 @@ const run = async () => {
       const commonOptions = {
         agent: agentBackend ?? undefined,
         codiffVersion: packageJson.version,
+        forcePublic,
         openExternal,
         repositoryPath: requestedPath,
         serviceUrlOverride: process.env.CODIFF_SHARE_SERVER_URL,

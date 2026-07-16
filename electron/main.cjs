@@ -1,7 +1,6 @@
 // @ts-check
 
 const { existsSync, readFileSync, writeFileSync } = require('node:fs');
-const { userInfo } = require('node:os');
 const { basename, dirname, join, relative, resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const {
@@ -103,7 +102,6 @@ const {
 } = require('./repository-watcher.cjs');
 const { getPlanReviewPath, readPlanReview, writePlanReview } = require('./plan-review.cjs');
 const { createSharedPlanSnapshot } = require('./shared-plan.cjs');
-const { readLocalIdentity } = require('./local-identity.cjs');
 const { createWalkthroughProgressReporter } = require('./walkthrough-progress.cjs');
 
 /**
@@ -1038,25 +1036,23 @@ const focusWindow = (window) => {
 const getWalkthroughShareContext = async (webContentsId) => {
   const repositoryPath = windowRepositories.get(webContentsId) || getLaunchPath();
   const uploader = await readGitIdentity(repositoryPath);
-  let username = '';
-  try {
-    username = userInfo().username;
-  } catch {}
 
   return {
     target: resolveWalkthroughShareTarget({
       email: uploader.email,
       overrideUrl: process.env.CODIFF_SHARE_SERVER_URL,
-      username,
     }),
     uploader,
   };
 };
 
-const getPlanShareContext = () => {
-  const uploader = readLocalIdentity();
+/** @param {number} webContentsId */
+const getPlanShareContext = async (webContentsId) => {
+  const repositoryPath = windowRepositories.get(webContentsId) || getLaunchPath();
+  const uploader = await readGitIdentity(repositoryPath);
   return {
     target: resolvePlanShareTarget({
+      email: uploader.email,
       overrideUrl: process.env.CODIFF_SHARE_SERVER_URL,
     }),
     uploader,
@@ -1545,7 +1541,7 @@ ipcMain.handle('codiff:sharePlan', async (event, review) => {
   const agent = resolveWindowAgent(event.sender.id);
   const sessionId = launchOptions[agent.sessionLaunchOptionKey];
   return shareSnapshot(
-    getPlanShareContext(),
+    getPlanShareContext(event.sender.id),
     createSharedPlanSnapshot({
       agent: agent.id,
       codiffVersion: app.getVersion(),

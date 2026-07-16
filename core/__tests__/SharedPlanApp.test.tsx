@@ -83,6 +83,8 @@ test('read-only comments can reveal attached targets', async () => {
 });
 
 test('shared plans render Markdown and comments read-only', async () => {
+  const onDeleteShare = vi.fn();
+  const confirmDelete = vi.spyOn(window, 'confirm').mockReturnValue(false);
   const snapshot = {
     codiffVersion: '1.4.7',
     document: {
@@ -162,7 +164,7 @@ test('shared plans render Markdown and comments read-only', async () => {
   try {
     await act(async () => {
       root = createRoot(container);
-      root.render(<PlanReviewSurface snapshot={snapshot} />);
+      root.render(<PlanReviewSurface onDeleteShare={onDeleteShare} snapshot={snapshot} />);
     });
 
     await waitFor(() => {
@@ -180,6 +182,16 @@ test('shared plans render Markdown and comments read-only', async () => {
       container.querySelector('.codiff-header-toggle-static .codiff-file-path')?.textContent,
     ).toBe('plan.md');
     expect(container.querySelector('button[aria-label="Download plan"] svg')).not.toBeNull();
+    const deleteShare = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Delete shared plan"]',
+    );
+    expect(deleteShare?.closest('.plan-file-actions')).not.toBeNull();
+    await act(async () => deleteShare?.click());
+    expect(confirmDelete).toHaveBeenCalledWith('Delete this shared plan? This cannot be undone.');
+    expect(onDeleteShare).not.toHaveBeenCalled();
+    confirmDelete.mockReturnValue(true);
+    await act(async () => deleteShare?.click());
+    await waitFor(() => expect(onDeleteShare).toHaveBeenCalledOnce());
     expect(
       [...container.querySelectorAll<HTMLElement>('[contenteditable]')].every(
         (element) => element.getAttribute('contenteditable') === 'false',

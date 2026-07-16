@@ -219,7 +219,7 @@ export function useAppReviewComments({
       return window.codiff
         .submitPullRequestReview({
           ...(body ? { body } : {}),
-          comments: pendingComments.map(toPullRequestReviewComment),
+          comments: pendingComments.map((comment) => toPullRequestReviewComment(comment)),
           event,
           source: currentState.source,
         })

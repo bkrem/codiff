@@ -1,6 +1,7 @@
 import type {
   ChangedFile,
   DiffSection,
+  PullRequestExistingReviewComment,
   PullRequestReviewComment,
   RepositoryState,
 } from '../types.ts';
@@ -115,14 +116,52 @@ export const getReviewCommentRangeProps = (
     : {};
 };
 
-export const toPullRequestReviewComment = (comment: ReviewComment): PullRequestReviewComment => ({
+export const toPullRequestReviewComment = (
+  comment: ReviewComment,
+  { includeSectionId = false }: { includeSectionId?: boolean } = {},
+): PullRequestReviewComment => ({
   body: comment.body,
   filePath: comment.filePath,
   ...(comment.lineNumber != null ? { lineNumber: comment.lineNumber } : {}),
+  ...(includeSectionId ? { sectionId: comment.sectionId } : {}),
   ...(comment.side ? { side: comment.side } : {}),
   ...getReviewCommentRangeProps(comment),
   ...(comment.threadId ? { threadId: comment.threadId } : {}),
 });
+
+export const toSubmittedReviewComment = (
+  comment: PullRequestExistingReviewComment,
+  draft: ReviewComment,
+): ReviewComment => ({
+  ...(comment.anchor ? { anchor: comment.anchor } : {}),
+  author: comment.author,
+  body: comment.body,
+  ...(comment.canDelete ? { canDelete: true } : {}),
+  ...(comment.canEdit ? { canEdit: true } : {}),
+  ...(comment.canReplyThread === false ? { canReplyThread: false } : {}),
+  ...(comment.canResolveThread ? { canResolveThread: true } : {}),
+  filePath: comment.filePath,
+  id: comment.id,
+  ...(comment.isOutdated ? { isOutdated: true } : {}),
+  isReadOnly: true,
+  ...(comment.isThreadResolved ? { isThreadResolved: true } : {}),
+  ...(comment.lineNumber != null ? { lineNumber: comment.lineNumber } : {}),
+  sectionId: comment.sectionId ?? draft.sectionId,
+  ...(comment.side ? { side: comment.side } : {}),
+  ...(comment.startLineNumber != null ? { startLineNumber: comment.startLineNumber } : {}),
+  ...(comment.startSide ? { startSide: comment.startSide } : {}),
+  ...(comment.submittedAt ? { submittedAt: comment.submittedAt } : {}),
+  ...(comment.threadId ? { threadId: comment.threadId } : {}),
+  ...(comment.url ? { url: comment.url } : {}),
+});
+
+export const mergeReviewComments = (
+  snapshotComments: ReadonlyArray<ReviewComment>,
+  localComments: ReadonlyArray<ReviewComment>,
+): ReadonlyArray<ReviewComment> => {
+  const snapshotIds = new Set(snapshotComments.map((comment) => comment.id));
+  return [...snapshotComments, ...localComments.filter((comment) => !snapshotIds.has(comment.id))];
+};
 
 const isPendingPullRequestReviewComment = (comment: ReviewComment) =>
   !comment.isReadOnly &&
@@ -342,37 +381,36 @@ export const buildReviewCommentsMarkdown = (
 };
 
 export const getReviewCommentsFromState = (state: RepositoryState): ReadonlyArray<ReviewComment> =>
-  state.source.type === 'pull-request'
-    ? (state.reviewComments ?? []).flatMap((comment) => {
-        const file = state.files.find((candidate) => candidate.path === comment.filePath);
-        const section = file?.sections[0];
-        return section
-          ? [
-              {
-                author: comment.author,
-                body: comment.body,
-                ...(comment.canDelete ? { canDelete: true } : {}),
-                ...(comment.canEdit ? { canEdit: true } : {}),
-                ...(comment.canReplyThread === false ? { canReplyThread: false } : {}),
-                ...(comment.canResolveThread ? { canResolveThread: true } : {}),
-                filePath: comment.filePath,
-                id: comment.id,
-                ...(comment.isOutdated ? { isOutdated: true } : {}),
-                isReadOnly: true,
-                ...(comment.isThreadResolved ? { isThreadResolved: true } : {}),
-                ...(comment.anchor === 'file' ? { anchor: 'file' as const } : {}),
-                ...(comment.lineNumber != null ? { lineNumber: comment.lineNumber } : {}),
-                sectionId: section.id,
-                ...(comment.side ? { side: comment.side } : {}),
-                ...getReviewCommentRangeProps(comment),
-                submittedAt: comment.submittedAt,
-                ...(comment.threadId ? { threadId: comment.threadId } : {}),
-                url: comment.url,
-              },
-            ]
-          : [];
-      })
-    : [];
+  (state.reviewComments ?? []).flatMap((comment) => {
+    const file = state.files.find((candidate) => candidate.path === comment.filePath);
+    const section =
+      file?.sections.find((candidate) => candidate.id === comment.sectionId) ?? file?.sections[0];
+    return section
+      ? [
+          {
+            author: comment.author,
+            body: comment.body,
+            ...(comment.canDelete ? { canDelete: true } : {}),
+            ...(comment.canEdit ? { canEdit: true } : {}),
+            ...(comment.canReplyThread === false ? { canReplyThread: false } : {}),
+            ...(comment.canResolveThread ? { canResolveThread: true } : {}),
+            filePath: comment.filePath,
+            id: comment.id,
+            ...(comment.isOutdated ? { isOutdated: true } : {}),
+            isReadOnly: true,
+            ...(comment.isThreadResolved ? { isThreadResolved: true } : {}),
+            ...(comment.anchor === 'file' ? { anchor: 'file' as const } : {}),
+            ...(comment.lineNumber != null ? { lineNumber: comment.lineNumber } : {}),
+            sectionId: section.id,
+            ...(comment.side ? { side: comment.side } : {}),
+            ...getReviewCommentRangeProps(comment),
+            submittedAt: comment.submittedAt,
+            ...(comment.threadId ? { threadId: comment.threadId } : {}),
+            url: comment.url,
+          },
+        ]
+      : [];
+  });
 
 export const getVisibleReviewComments = (
   comments: ReadonlyArray<ReviewComment>,

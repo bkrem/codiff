@@ -25,27 +25,27 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "@nkzw/source": "./index.ts",
+      "@nkzw/codiff-source": "./index.ts",
       "default": "./dist/index.mjs"
     },
     "./react": {
       "types": "./dist/react.d.ts",
-      "@nkzw/source": "./react.ts",
+      "@nkzw/codiff-source": "./react.ts",
       "default": "./dist/react.mjs"
     },
     "./share": {
       "types": "./dist/share.d.ts",
-      "@nkzw/source": "./share.ts",
+      "@nkzw/codiff-source": "./share.ts",
       "default": "./dist/share.mjs"
     },
     "./styles.css": {
       "types": "./dist/styles.css.d.ts",
-      "@nkzw/source": "./App.css",
+      "@nkzw/codiff-source": "./App.css",
       "default": "./dist/style.css"
     },
     "./walkthrough": {
       "types": "./dist/lib/narrative-walkthrough-diff.d.ts",
-      "@nkzw/source": "./lib/narrative-walkthrough-diff.js",
+      "@nkzw/codiff-source": "./lib/narrative-walkthrough-diff.js",
       "default": "./dist/lib/narrative-walkthrough-diff.mjs"
     }
   },

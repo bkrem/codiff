@@ -786,7 +786,7 @@ test('read-only review comments render safe details blocks', async () => {
   } satisfies ReviewComment;
 
   const view = await renderReact(
-    <ReviewCodeViewHarness comments={[comment]} files={[file]} isPullRequest />,
+    <ReviewCodeViewHarness comments={[comment]} files={[file]} supportsReviewCommentActions />,
   );
 
   try {
@@ -1362,9 +1362,9 @@ test('failed pull request comments keep their draft and can be retried', async (
     <ReviewCodeViewHarness
       comments={[comment]}
       files={[file]}
-      isPullRequest
       onSubmitComment={onSubmitComment}
       onUpdateComment={onUpdateComment}
+      supportsReviewCommentActions
     />,
   );
 
@@ -1394,6 +1394,56 @@ test('failed pull request comments keep their draft and can be retried', async (
   }
 });
 
+test('working-tree share comments support the Comment button and Mod+Enter', async () => {
+  const platform = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+  const file = createChangedFile('src/shared-comment.ts');
+  const comment = {
+    body: 'Submit this shared comment.',
+    filePath: file.path,
+    id: 'shared-comment',
+    lineNumber: 1,
+    sectionId: file.sections[0].id,
+    side: 'additions',
+  } satisfies ReviewComment;
+  const onSubmitComment = vi.fn();
+  const view = await renderReact(
+    <ReviewCodeViewHarness
+      comments={[comment]}
+      files={[file]}
+      onSubmitComment={onSubmitComment}
+      supportsReviewCommentActions
+    />,
+  );
+
+  try {
+    const commentButton = [...view.container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Comment',
+    );
+    expect(commentButton).not.toBeNull();
+
+    await act(async () => commentButton?.click());
+    expect(onSubmitComment).toHaveBeenLastCalledWith(comment.id);
+
+    onSubmitComment.mockClear();
+    const textarea = view.container.querySelector<HTMLTextAreaElement>('.review-comment-input');
+    expect(textarea).not.toBeNull();
+    await act(async () => {
+      textarea?.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+          metaKey: true,
+        }),
+      );
+    });
+    expect(onSubmitComment).toHaveBeenCalledWith(comment.id);
+  } finally {
+    platform.mockRestore();
+    await view.cleanup();
+  }
+});
+
 test('file comments can be created for GitLab merge requests but not GitHub pull requests', async () => {
   const file = createChangedFile('src/comment.ts');
   const onCreateComment = vi.fn();
@@ -1410,9 +1460,9 @@ test('file comments can be created for GitLab merge requests but not GitHub pull
   const view = await renderReact(
     <ReviewCodeViewHarness
       files={[file]}
-      isPullRequest
       onCreateComment={onCreateComment}
       source={gitLabSource}
+      supportsReviewCommentActions
     />,
   );
 
@@ -1433,9 +1483,9 @@ test('file comments can be created for GitLab merge requests but not GitHub pull
     await view.rerender(
       <ReviewCodeViewHarness
         files={[file]}
-        isPullRequest
         onCreateComment={onCreateComment}
         source={gitHubSource}
+        supportsReviewCommentActions
       />,
     );
     expect(view.container.querySelector('.codiff-file-comment-button')).toBeNull();
@@ -1460,12 +1510,12 @@ test('file-level review comments render as measured file annotations', async () 
         },
       ]}
       files={[file]}
-      isPullRequest
       source={{
         provider: 'gitlab',
         type: 'pull-request',
         url: 'https://gitlab.example.com/group/project/-/merge_requests/1',
       }}
+      supportsReviewCommentActions
     />,
   );
 

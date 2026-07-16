@@ -1,4 +1,5 @@
 export { Button, buttonVariants, type ButtonProps } from './app/components/Button.tsx';
+export { Thinking } from './app/components/Thinking.tsx';
 export {
   getPlanCommentAffordancePosition,
   getPlanCommentColorIndex,

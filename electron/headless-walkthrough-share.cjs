@@ -1,7 +1,6 @@
 // @ts-check
 
 const { readFileSync } = require('node:fs');
-const { userInfo } = require('node:os');
 const { getAgent } = require('./agent.cjs');
 const { readConfig, writeConfig } = require('./config.cjs');
 const { createCloudflareAccessClient } = require('./cloudflare-access.cjs');
@@ -25,6 +24,7 @@ const { resolveWalkthroughShareTarget } = require('./walkthrough-sharing.cjs');
 /**
  * @param {{
  *   codiffVersion: string;
+ *   forcePublic?: boolean;
  *   openExternal: (url: string) => Promise<void>;
  *   serviceUrlOverride?: string;
  *   snapshot: Record<string, unknown>;
@@ -34,23 +34,19 @@ const { resolveWalkthroughShareTarget } = require('./walkthrough-sharing.cjs');
  */
 const uploadSnapshot = async ({
   codiffVersion,
+  forcePublic,
   openExternal,
   serviceUrlOverride,
   snapshot,
   target: targetOverride,
   uploader,
 }) => {
-  let username = '';
-  try {
-    username = userInfo().username;
-  } catch {}
-
   const target =
     targetOverride ||
     resolveWalkthroughShareTarget({
       email: uploader.email,
+      forcePublic,
       overrideUrl: serviceUrlOverride,
-      username,
     });
   if (!target) {
     throw new Error('Sharing is not available for this user.');
@@ -82,6 +78,7 @@ const uploadSnapshot = async ({
 /**
  * @param {{
  *   codiffVersion: string;
+ *   forcePublic?: boolean;
  *   config: ReturnType<typeof readConfig>;
  *   openExternal: (url: string) => Promise<void>;
  *   serviceUrlOverride?: string;
@@ -92,6 +89,7 @@ const uploadSnapshot = async ({
  */
 const uploadWalkthrough = async ({
   codiffVersion,
+  forcePublic,
   config,
   openExternal,
   serviceUrlOverride,
@@ -101,6 +99,7 @@ const uploadWalkthrough = async ({
 }) =>
   uploadSnapshot({
     codiffVersion,
+    forcePublic,
     openExternal,
     serviceUrlOverride,
     snapshot: {
@@ -157,6 +156,7 @@ const readGeneratedShareState = async (repositoryPath, source, config) =>
  * @param {{
  *   agent?: 'claude' | 'codex' | 'opencode' | 'pi';
  *   codiffVersion: string;
+ *   forcePublic?: boolean;
  *   openExternal: (url: string) => Promise<void>;
  *   repositoryPath: string;
  *   serviceUrlOverride?: string;
@@ -167,6 +167,7 @@ const readGeneratedShareState = async (repositoryPath, source, config) =>
 const shareWalkthroughFile = async ({
   agent,
   codiffVersion,
+  forcePublic,
   openExternal,
   repositoryPath,
   serviceUrlOverride,
@@ -194,6 +195,7 @@ const shareWalkthroughFile = async ({
 
   return uploadWalkthrough({
     codiffVersion,
+    forcePublic,
     config,
     openExternal,
     serviceUrlOverride,
@@ -209,6 +211,7 @@ const shareWalkthroughFile = async ({
  *   claudeSessionId?: string;
  *   codexSessionId?: string;
  *   codiffVersion: string;
+ *   forcePublic?: boolean;
  *   openExternal: (url: string) => Promise<void>;
  *   opencodeSessionId?: string;
  *   piSessionId?: string;
@@ -223,6 +226,7 @@ const generateAndShareWalkthrough = async ({
   claudeSessionId,
   codexSessionId,
   codiffVersion,
+  forcePublic,
   openExternal,
   opencodeSessionId,
   piSessionId,
@@ -265,6 +269,7 @@ const generateAndShareWalkthrough = async ({
 
   return uploadWalkthrough({
     codiffVersion,
+    forcePublic,
     config,
     openExternal,
     serviceUrlOverride,

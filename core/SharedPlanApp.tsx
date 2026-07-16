@@ -7,7 +7,7 @@ import {
 } from '@nkzw/mdx-editor';
 import { frontmatterPlugin, imagePlugin } from '@nkzw/mdx-editor/core';
 import { DownloadSimpleIcon as DownloadSimple } from '@phosphor-icons/react/DownloadSimple';
-import { X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -793,10 +793,12 @@ function SharedPlanCommentRail({
 
 export function PlanReviewSurface({
   commenting,
+  onDeleteShare,
   signInLabel = 'Sign in to comment',
   snapshot,
 }: {
   commenting?: PlanReviewCommenting;
+  onDeleteShare?: () => Promise<void> | void;
   signInLabel?: string;
   snapshot: SharedPlanSnapshot;
 }) {
@@ -952,6 +954,16 @@ export function PlanReviewSurface({
     link.remove();
     URL.revokeObjectURL(url);
   }, [snapshot]);
+  const deleteShare = useCallback(async () => {
+    if (!onDeleteShare || !window.confirm('Delete this shared plan? This cannot be undone.')) {
+      return;
+    }
+    try {
+      await onDeleteShare();
+    } catch (error: unknown) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  }, [onDeleteShare]);
 
   return (
     <main
@@ -989,16 +1001,31 @@ export function PlanReviewSurface({
                     </span>
                   </span>
                 </div>
-                <Button
-                  aria-label="Download plan"
-                  className="plan-download-button"
-                  onClick={downloadPlan}
-                  size="icon"
-                  title="Download plan"
-                  type="button"
-                >
-                  <DownloadSimple aria-hidden size={16} weight="bold" />
-                </Button>
+                <div className="plan-file-actions">
+                  {onDeleteShare ? (
+                    <Button
+                      action={deleteShare}
+                      aria-label="Delete shared plan"
+                      pendingPlaceholder="…"
+                      size="icon"
+                      title="Delete shared plan"
+                      type="button"
+                      variant="destructive"
+                    >
+                      <Trash2 aria-hidden size={16} />
+                    </Button>
+                  ) : null}
+                  <Button
+                    aria-label="Download plan"
+                    className="plan-download-button"
+                    onClick={downloadPlan}
+                    size="icon"
+                    title="Download plan"
+                    type="button"
+                  >
+                    <DownloadSimple aria-hidden size={16} weight="bold" />
+                  </Button>
+                </div>
               </div>
               <MarkdownEditor
                 activeAnnotationId={pendingTarget ? pendingPlanCommentId : activeThreadId}

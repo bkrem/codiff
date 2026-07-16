@@ -164,6 +164,12 @@ export const getChangedPaths = (
   return changedPaths;
 };
 
+export const haveChangedFiles = (
+  previousFiles: ReadonlyArray<ReloadSelectionFile>,
+  nextFiles: ReadonlyArray<ReloadSelectionFile>,
+): boolean =>
+  previousFiles.length !== nextFiles.length || getChangedPaths(previousFiles, nextFiles).size > 0;
+
 export const getReloadDeltaPaths = (
   selection: ReloadSelection | null,
   state: RepositoryState,
@@ -174,6 +180,14 @@ export const getReloadDeltaPaths = (
   }
 
   return getChangedPaths(matchedSelection.files, state.files);
+};
+
+export const haveReloadedFilesChanged = (
+  selection: ReloadSelection | null,
+  state: RepositoryState,
+): boolean => {
+  const matchedSelection = getMatchingSelection(selection, state);
+  return matchedSelection ? haveChangedFiles(matchedSelection.files, state.files) : false;
 };
 
 export const getReloadHistorySource = (

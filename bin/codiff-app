@@ -65,7 +65,7 @@ show_help() {
 }
 
 for arg in "$@"; do
-  if [ "$arg" = "--share" ]; then
+  if [ "$arg" = "--share" ] || [ "$arg" = "--public" ]; then
     runtime="${CODIFF_NODE_COMMAND:-}"
     if [ -z "$runtime" ]; then
       electron_exec="$(ls "$app_path/Contents/MacOS/" 2>/dev/null | head -n 1)"

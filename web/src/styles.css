@@ -109,6 +109,106 @@ body {
   overflow: hidden;
 }
 
+.codiff-web-page-thinking {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+}
+
+.codiff-connect-page {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 32px;
+}
+
+.codiff-connect-status {
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+  text-align: center;
+}
+
+.codiff-connect-status strong {
+  font-size: 20px;
+}
+
+.codiff-connect-status p,
+.codiff-public-stats header p {
+  color: var(--sidebar-text);
+}
+
+.codiff-share-sign-in {
+  background: var(--text);
+  border-radius: 6px;
+  color: var(--app-bg);
+  cursor: pointer;
+  font: 600 14px/1 var(--font-sans);
+  justify-self: center;
+  padding: 11px 16px;
+}
+
+.codiff-web-viewer-error {
+  background: var(--app-bg);
+  color: var(--text);
+  min-height: 100%;
+  padding: 24px;
+}
+
+.codiff-public-stats {
+  display: grid;
+  gap: 28px;
+}
+
+.codiff-public-stats header h1 {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.codiff-public-stats-totals {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.codiff-public-stats-totals section,
+.codiff-public-stats-days article {
+  background: var(--file-bg);
+  border: 1px solid var(--file-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 20px;
+}
+
+.codiff-public-stats-totals strong {
+  font-size: 30px;
+}
+
+.codiff-public-stats-totals span,
+.codiff-public-stats-days span {
+  color: var(--sidebar-text);
+}
+
+.codiff-public-stats-days {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  overflow-x: auto;
+}
+
+.codiff-public-stats-days article {
+  min-width: 110px;
+}
+
+.codiff-public-stats-days time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .codiff-web-shell {
   background: var(--app-bg);
   color: var(--text);
@@ -159,32 +259,124 @@ body {
   width: 28px;
 }
 
-.codiff-web-github {
+.codiff-web-header-spacer {
+  height: 34px;
+  width: 132px;
+}
+
+.codiff-web-user-avatar {
+  border-radius: 50%;
+  flex: none;
+  height: 28px;
+  object-fit: cover;
+  width: 28px;
+}
+
+.codiff-web-user-avatar-fallback {
   align-items: center;
   background: var(--code-bg);
   border: 1px solid var(--file-border);
-  border-radius: 17px;
   color: var(--text);
   display: inline-flex;
-  height: 34px;
+  font-size: 12px;
+  font-weight: 700;
   justify-content: center;
+}
+
+.codiff-web-user-name {
+  color: var(--sidebar-text);
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codiff-web-user-menu-trigger {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 18px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  margin-right: -8px;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.codiff-web-user-menu-trigger:hover,
+.codiff-web-user-menu-trigger[data-popup-open] {
+  background: var(--hover-wash);
+}
+
+.codiff-web-user-menu-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--text) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.codiff-web-user-menu-chevron {
+  color: var(--muted);
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.codiff-web-user-menu-trigger[data-popup-open] .codiff-web-user-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.codiff-web-user-menu-positioner {
+  z-index: 100;
+}
+
+.codiff-web-user-menu-popup {
+  background: var(--file-bg);
+  border: 1px solid var(--file-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.16);
+  min-width: 140px;
+  outline: none;
+  padding: 5px;
+  transform-origin: var(--transform-origin);
   transition:
-    background 120ms ease,
+    opacity 120ms ease,
     transform 120ms ease;
-  width: 34px;
 }
 
-.codiff-web-github:hover {
-  background: var(--inline-code-bg);
-}
-
-.codiff-web-github:active {
+.codiff-web-user-menu-popup[data-starting-style],
+.codiff-web-user-menu-popup[data-ending-style] {
+  opacity: 0;
   transform: scale(0.96);
 }
 
-.codiff-web-github:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--text) 45%, transparent);
-  outline-offset: 2px;
+.codiff-web-user-menu-item {
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  padding: 8px 10px;
+  user-select: none;
+}
+
+.codiff-web-user-menu-item[data-highlighted] {
+  background: var(--hover-wash);
+}
+
+.codiff-web-user-menu-item[data-disabled] {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.codiff-web-user-menu-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 4px 10px 6px;
+  max-width: 180px;
 }
 
 .codiff-web-page {
@@ -237,6 +429,11 @@ body {
   font-size: 18px;
   margin: 20px 0 0;
   max-width: 620px;
+}
+
+.codiff-web-guide-cta {
+  display: flex;
+  margin-top: 28px;
 }
 
 .codiff-web-hero-icon {
@@ -392,11 +589,24 @@ body {
   width: 42px;
 }
 
+.codiff-web-footer-copy {
+  display: grid;
+  gap: 3px;
+}
+
 .codiff-web-footer p {
   font-size: 13px;
   line-height: 1.6;
   margin: 0;
   text-align: right;
+}
+
+.codiff-web-footer-tagline strong {
+  color: var(--text);
+}
+
+.codiff-web-footer-tagline em {
+  font-style: italic;
 }
 
 .codiff-web-footer p a {
@@ -442,6 +652,10 @@ body {
 
   .codiff-web-header-inner {
     padding: 0 12px;
+  }
+
+  .codiff-web-user-name {
+    display: none;
   }
 
   .codiff-web-footer-inner {

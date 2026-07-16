@@ -95,17 +95,18 @@ const renderWalkthroughController = async ({
   return {
     getController,
     preferencesRef,
+    stateGenerationRef,
     stateRef,
     view,
   };
 };
 
-test('walkthrough controller lazily generates, regenerates, and transitions modes', async () => {
+test('walkthrough controller lazily generates, refreshes, and transitions modes', async () => {
   const getNarrativeWalkthrough = vi.fn(async () => ({
     status: 'ready' as const,
     walkthrough,
   }));
-  const { getController, view } = await renderWalkthroughController({
+  const { getController, stateGenerationRef, stateRef, view } = await renderWalkthroughController({
     codiff: {
       getNarrativeWalkthrough,
       onWalkthroughProgress: vi.fn(() => () => {}),
@@ -126,8 +127,14 @@ test('walkthrough controller lazily generates, regenerates, and transitions mode
     expect(getController().sidebarMode).toBe('walkthrough');
     expect(getController().walkthroughProgress.responseLabelIndex).toBe(0);
 
+    const refreshedState = {
+      ...stateRef.current,
+      files: [...stateRef.current.files, createChangedFile('src/added.ts')],
+    };
     await act(async () => {
-      getController().regenerateWalkthrough();
+      stateGenerationRef.current += 1;
+      stateRef.current = refreshedState;
+      getController().refreshWalkthroughForState(refreshedState);
     });
     await waitFor(() => {
       expect(getNarrativeWalkthrough).toHaveBeenCalledTimes(2);
