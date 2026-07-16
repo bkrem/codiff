@@ -1,5 +1,6 @@
 packages:
   - core
+  - web
 
 allowBuilds:
   '@google/genai': false
@@ -7,8 +8,11 @@ allowBuilds:
   '@swc/core': true
   electron: true
   electron-winstaller: true
+  esbuild: true
   node-pty: true
   protobufjs: false
+  sharp: true
+  workerd: true
 blockExoticSubdeps: false
 minimumReleaseAgeExclude:
   - '@nkzw/*'
