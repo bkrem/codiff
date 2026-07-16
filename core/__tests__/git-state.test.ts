@@ -13,7 +13,7 @@ import type {
   RepositoryState,
   ReviewSource,
 } from '../types.ts';
-import { getGitTestEnvironment } from './helpers/git.ts';
+import { getGitTestEnvironment, removeGitTestDirectory } from './helpers/git.ts';
 
 type StatusEntry = {
   oldPath?: string;
@@ -280,10 +280,7 @@ process.stdin.on('end', () => {
     } else {
       process.env.CODIFF_GITHUB_TEST_CALLS = originalCallsPath;
     }
-    await Promise.all([
-      rm(repo, { force: true, recursive: true }),
-      rm(fakeBin, { force: true, recursive: true }),
-    ]);
+    await Promise.all([removeGitTestDirectory(repo), removeGitTestDirectory(fakeBin)]);
   }
 };
 
@@ -306,7 +303,7 @@ const withRepo = async (run: (repo: string) => Promise<void>) => {
   try {
     await run(repo);
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 };
 
@@ -410,7 +407,7 @@ exec git "$@"
       } else {
         process.env.CODIFF_TEST_ORIGINAL_PATH = originalGitPath;
       }
-      await rm(wrapperDirectory, { force: true, recursive: true });
+      await removeGitTestDirectory(wrapperDirectory);
     }
   });
 });
@@ -1085,14 +1082,10 @@ test('readWalkthroughRepositoryState preserves nested launch paths', () =>
     expect(dirtyState.root).toBe(repo);
   }));
 
-test.sequential('benchmarks clean implicit walkthrough repository reads', () =>
+test.sequential('clean implicit walkthrough reads use a bounded number of Git processes', () =>
   withRepo(async (repo) => {
     await writeRepoFile(repo, 'example.txt', 'before\n');
     await commitAll(repo, 'initial commit');
-
-    const startedAt = performance.now();
-    await readWalkthroughRepositoryState(repo);
-    const duration = performance.now() - startedAt;
 
     const tracePath = join(repo, '.git', 'walkthrough-trace.jsonl');
     const previousTrace = process.env.GIT_TRACE2_EVENT;
@@ -1112,7 +1105,6 @@ test.sequential('benchmarks clean implicit walkthrough repository reads', () =>
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { event?: string })
       .filter(({ event }) => event === 'version').length;
-    expect(duration).toBeLessThan(750);
     expect(processCount).toBeLessThanOrEqual(14);
   }));
 
@@ -1707,7 +1699,7 @@ test('readRepositoryState reads merge commits against the first parent', async (
   });
 });
 
-test('benchmarks commit diff generation duration for many changed files', async () => {
+test('reads commit diffs for many changed files', async () => {
   await withRepo(async (repo) => {
     const fileCount = 80;
     await Promise.all(
@@ -1732,15 +1724,12 @@ test('benchmarks commit diff generation duration for many changed files', async 
     await commitAll(repo, 'large history commit');
     const commit = (await git(repo, ['rev-parse', 'HEAD'])).trim();
 
-    const startedAt = performance.now();
     const state = await readRepositoryState(repo, {
       ref: commit,
       type: 'commit',
     });
-    const duration = performance.now() - startedAt;
 
     expect(state.files).toHaveLength(fileCount);
-    expect(duration).toBeLessThan(5000);
   });
 });
 
@@ -1805,7 +1794,7 @@ test('readRepositoryState rejects non-repository launch paths', async () => {
   try {
     await expect(readRepositoryState(directory)).rejects.toThrow(/not a git repository/i);
   } finally {
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 

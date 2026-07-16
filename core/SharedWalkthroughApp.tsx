@@ -1077,7 +1077,7 @@ export function ReviewSurface({
             </div>
           </div>
         ) : (
-          <div className="loading codex italic">
+          <div className="loading codex">
             <WalkthroughProgress
               phase={null}
               responseLabelIndex={0}

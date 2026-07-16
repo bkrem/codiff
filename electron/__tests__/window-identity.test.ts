@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
-import { getGitTestEnvironment } from '../../core/__tests__/helpers/git.ts';
+import { getGitTestEnvironment, removeGitTestDirectory } from '../../core/__tests__/helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { findMatchingWindowIdentity, getWindowIdentity, getWindowIdentityForRepositoryState } =
@@ -89,7 +89,7 @@ test.sequential('plan window identities do not invoke Git outside repositories',
     expect(await readFile(gitMarker, 'utf8').catch(() => null)).toBeNull();
   } finally {
     process.env.PATH = previousPath;
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -102,7 +102,7 @@ test('window identities match working-tree launches inside the same repository',
 
     expect(getWindowIdentity(nestedPath)?.key).toBe(getWindowIdentity(repositoryPath)?.key);
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -127,7 +127,7 @@ test('window identities resolve commit refs to the same commit sha', async () =>
       })?.key,
     );
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -155,8 +155,8 @@ test.sequential('resolved repository states build identities without invoking Gi
     expect(await readFile(gitMarker, 'utf8').catch(() => null)).toBeNull();
   } finally {
     process.env.PATH = previousPath;
-    await rm(fakeBin, { force: true, recursive: true });
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(fakeBin);
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -182,7 +182,7 @@ test('implicit walkthrough identities use HEAD only when the working tree is cle
       })?.sourceKey,
     ).toBe('working-tree');
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -208,7 +208,7 @@ test('window identities distinguish branch history launches', async () => {
       })?.sourceKey,
     ).toBe(`branch-diff:feature:${head}:${nextHead}`);
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -243,7 +243,7 @@ test('window identities normalize GitHub pull request sources', async () => {
       })?.key,
     );
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -260,7 +260,7 @@ test('window identities normalize GitLab merge request sources', async () => {
       })?.sourceKey,
     ).toBe('pull-request:gitlab:gitlab.example.com/group/subgroup/project#8');
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 

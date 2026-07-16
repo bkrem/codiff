@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, test } from 'vite-plus/test';
+import { removeGitTestDirectory } from './helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 type GitLabPosition = Record<string, unknown> & {
@@ -139,7 +140,7 @@ process.stdin.on('end', () => {
     } else {
       process.env.CODIFF_GLAB_TEST_CALLS = previousCallsPath;
     }
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 };
 

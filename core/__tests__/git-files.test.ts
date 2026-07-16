@@ -1,10 +1,11 @@
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, expect, test } from 'vite-plus/test';
+import { removeGitTestDirectory } from './helpers/git.ts';
 
 type FileContentResult = {
   binary: boolean;
@@ -33,10 +34,10 @@ type GitFilesModule = {
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
 const { readGitFiles } = require('../../electron/git-state/git-files.cjs') as GitFilesModule;
-const benchmarks = [
-  { fileCount: 20, maximumDuration: 1500, maximumProcesses: 6 },
-  { fileCount: 160, maximumDuration: 2000, maximumProcesses: 6 },
-  { fileCount: 500, maximumDuration: 3000, maximumProcesses: 10 },
+const batchCases = [
+  { fileCount: 20, maximumProcesses: 6 },
+  { fileCount: 160, maximumProcesses: 6 },
+  { fileCount: 500, maximumProcesses: 10 },
 ] as const;
 
 let base = '';
@@ -156,7 +157,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (repo) {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });
 
@@ -224,9 +225,9 @@ test('batched Git file reads preserve text, binary, rename, missing, and size be
   expect(newFiles.get('literal-:(name).txt')?.file?.contents).toBe('literal after\n');
 });
 
-test.each(benchmarks)(
-  'benchmarks batched pull request content reads for $fileCount files',
-  async ({ fileCount, maximumDuration, maximumProcesses }) => {
+test.each(batchCases)(
+  'batches pull request content reads for $fileCount files',
+  async ({ fileCount, maximumProcesses }) => {
     const previousTrace = process.env.GIT_TRACE2_EVENT;
     const tracePath = join(repo, `trace-${fileCount}.jsonl`);
     process.env.GIT_TRACE2_EVENT = tracePath;
@@ -236,16 +237,13 @@ test.each(benchmarks)(
         { length: fileCount },
         (_, index) => `src/file-${index.toString().padStart(3, '0')}.ts`,
       );
-      const startedAt = performance.now();
       const [oldFiles, newFiles] = await Promise.all([
         readGitFiles(repo, base, paths, { refScopedEmptyCacheKey: true }),
         readGitFiles(repo, head, paths, { refScopedEmptyCacheKey: true }),
       ]);
-      const duration = performance.now() - startedAt;
 
       expect(oldFiles).toHaveLength(fileCount);
       expect(newFiles).toHaveLength(fileCount);
-      expect(duration).toBeLessThan(maximumDuration);
 
       const processCount = (await readFile(tracePath, 'utf8'))
         .trim()

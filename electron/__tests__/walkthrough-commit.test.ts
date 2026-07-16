@@ -1,11 +1,15 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
-import { getGitTestEnvironment, withGitTestEnvironment } from '../../core/__tests__/helpers/git.ts';
+import {
+  getGitTestEnvironment,
+  removeGitTestDirectory,
+  withGitTestEnvironment,
+} from '../../core/__tests__/helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { createWalkthroughCommit } = require('../walkthrough-commit.cjs') as {
@@ -33,7 +37,7 @@ const withRepo = async (testBody: (repoPath: string) => Promise<void>) => {
       await git(repoPath, ['init']);
       await testBody(repoPath);
     } finally {
-      await rm(repoPath, { force: true, recursive: true });
+      await removeGitTestDirectory(repoPath);
     }
   });
 };

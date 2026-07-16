@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
+import { removeGitTestDirectory } from './helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { readRepositoryState } = require('../../electron/git-state.cjs') as {
@@ -176,7 +177,7 @@ test('headless share uploads the canonical snapshot and prints its URL', async (
     });
   } finally {
     await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -289,7 +290,7 @@ test('headless plan share works outside Git without invoking it', async () => {
     });
   } finally {
     await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -425,6 +426,6 @@ exit 1
     });
   } finally {
     await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 }, 15_000);

@@ -41,7 +41,7 @@ export function ReviewSourceLoading() {
   }, []);
 
   return (
-    <div className="review-source-loading loading pulse italic" role="status">
+    <div className="review-source-loading loading pulse" role="status">
       {visible ? 'Thinking…' : null}
     </div>
   );

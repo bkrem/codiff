@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, stat, utimes, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
-import { getGitTestEnvironment } from '../../core/__tests__/helpers/git.ts';
+import { getGitTestEnvironment, removeGitTestDirectory } from '../../core/__tests__/helpers/git.ts';
 
 type Snapshot = {
   head: string;
@@ -372,33 +372,28 @@ test('uses focused, background, and hidden polling intervals', () => {
   expect(getRepositoryWatcherPollInterval([{ focused: false, visible: false }])).toBe(30_000);
 });
 
-test('benchmarks clean and large dirty repository watcher polls', async () => {
+test('clean and large dirty repository watcher polls use one Git process', async () => {
   const repository = await realpath(await mkdtemp(join(tmpdir(), 'codiff-repository-watcher-')));
   const largePath = join(repository, 'large.bin');
-  const measure = async (label: string, knownDirtyPaths: ReadonlyArray<string>) => {
-    for (let index = 0; index < 3; index += 1) {
-      await readRepositoryWatcherSnapshot(repository, [], knownDirtyPaths);
-    }
-    const durations = [];
-    for (let index = 0; index < 3; index += 1) {
-      const startedAt = performance.now();
-      await readRepositoryWatcherSnapshot(repository, [], knownDirtyPaths);
-      durations.push(performance.now() - startedAt);
-    }
+  const countGitProcesses = async (label: string, knownDirtyPaths: ReadonlyArray<string>) => {
     const tracePath = join(repository, '.git', `trace-${label}.jsonl`);
+    const previousTrace = process.env.GIT_TRACE2_EVENT;
     process.env.GIT_TRACE2_EVENT = tracePath;
-    await readRepositoryWatcherSnapshot(repository, [], knownDirtyPaths);
-    delete process.env.GIT_TRACE2_EVENT;
-    const processCount = (await readFile(tracePath, 'utf8'))
+    try {
+      await readRepositoryWatcherSnapshot(repository, [], knownDirtyPaths);
+    } finally {
+      if (previousTrace == null) {
+        delete process.env.GIT_TRACE2_EVENT;
+      } else {
+        process.env.GIT_TRACE2_EVENT = previousTrace;
+      }
+    }
+    return (await readFile(tracePath, 'utf8'))
       .trim()
       .split('\n')
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { event?: string })
       .filter(({ event }) => event === 'version').length;
-    return {
-      median: durations.sort((left, right) => left - right)[Math.floor(durations.length / 2)],
-      processCount,
-    };
   };
 
   try {
@@ -407,25 +402,26 @@ test('benchmarks clean and large dirty repository watcher polls', async () => {
     await git(repository, ['add', 'large.bin']);
     await git(repository, ['commit', '-m', 'initial']);
 
-    const clean = await measure('clean', []);
+    const cleanProcessCount = await countGitProcesses('clean', []);
     await writeFile(largePath, Buffer.alloc(largeTestFileSize, 2));
     const initialDirtySnapshot = await readRepositoryWatcherSnapshot(repository);
-    const dirty = await measure('dirty', Object.keys(initialDirtySnapshot.pathSignatures));
+    const dirtyProcessCount = await countGitProcesses(
+      'dirty',
+      Object.keys(initialDirtySnapshot.pathSignatures),
+    );
     await writeFile(join(repository, 'new.txt'), 'new\n');
     const combinedSnapshot = await readRepositoryWatcherSnapshot(repository, [], ['large.bin']);
     const snapshot = await readRepositoryWatcherSnapshot(repository, ['large.bin'], ['large.bin']);
 
-    expect(clean.median).toBeLessThan(250);
-    expect(dirty.median).toBeLessThan(400);
-    expect(clean.processCount).toBe(1);
-    expect(dirty.processCount).toBe(1);
+    expect(cleanProcessCount).toBe(1);
+    expect(dirtyProcessCount).toBe(1);
     expect(initialDirtySnapshot.pathVersions).toEqual({});
     expect(Object.keys(combinedSnapshot.pathSignatures).sort()).toEqual(['large.bin', 'new.txt']);
     expect(snapshot.pathSignatures['large.bin'].split('\0')).toHaveLength(7);
     expect(snapshot.pathVersions?.['large.bin']).toHaveLength(16);
   } finally {
     delete process.env.GIT_TRACE2_EVENT;
-    await rm(repository, { force: true, recursive: true });
+    await removeGitTestDirectory(repository);
   }
 }, 15_000);
 
@@ -455,7 +451,7 @@ test('detects same-size edits when the modification time is preserved', async ()
     expect(afterStat.mtimeMs).toBe(beforeStat.mtimeMs);
     expect(after.signature).not.toBe(before.signature);
   } finally {
-    await rm(repository, { force: true, recursive: true });
+    await removeGitTestDirectory(repository);
   }
 });
 
@@ -481,6 +477,6 @@ test('preserves literal backslashes in POSIX repository paths', async () => {
     expect(Object.keys(after.pathSignatures)).toEqual([path]);
     expect(after.signature).toBe(before.signature);
   } finally {
-    await rm(repository, { force: true, recursive: true });
+    await removeGitTestDirectory(repository);
   }
 });

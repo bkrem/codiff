@@ -20,7 +20,6 @@ nodeLinker: hoisted
 onlyBuiltDependencies:
   - '@nkzw/mdx-editor'
   - '@swc/core'
-  - '@tailwindcss/oxide'
   - electron
   - electron-winstaller
   - unrs-resolver

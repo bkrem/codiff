@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
-import { getGitTestEnvironment } from '../../core/__tests__/helpers/git.ts';
+import { getGitTestEnvironment, removeGitTestDirectory } from '../../core/__tests__/helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { getCommandLineLaunchOptions, getCommandLineRepositoryPath, getInitialRepositoryPath } =
@@ -110,7 +110,7 @@ test.sequential('plan command lines do not inspect Git refs', async () => {
     expect(await readFile(gitMarker, 'utf8').catch(() => null)).toBeNull();
   } finally {
     process.env.PATH = previousPath;
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -215,7 +215,7 @@ test('parses plain refs as branch sources', async () => {
     });
   } finally {
     process.chdir(previousCwd);
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -255,7 +255,7 @@ test('parses missing plain refs in Git repositories as branch sources', async ()
     });
   } finally {
     process.chdir(previousCwd);
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -284,7 +284,7 @@ test('parses hex-like refs as commits before branches', async () => {
     });
   } finally {
     process.chdir(previousCwd);
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -354,7 +354,7 @@ test('parses Codex walkthrough seed command-line options', async () => {
       },
     });
   } finally {
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -418,7 +418,7 @@ test('resolves GitHub and GitLab review markers through repository remotes', asy
       url: 'https://gitlab.example.com/group/subgroup/project/-/merge_requests/23',
     });
   } finally {
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -444,7 +444,7 @@ test('restores the last repository for plain app launches', async () => {
       getInitialRepositoryPath('/fallback', defaultLaunchOptions, lastRepositoryPath, {}),
     ).toBe(lastRepositoryPath);
   } finally {
-    await rm(lastRepositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(lastRepositoryPath);
   }
 });
 
@@ -513,7 +513,7 @@ test('does not restore over explicit launch intent', async () => {
       }),
     ).toBe('/fallback');
   } finally {
-    await rm(lastRepositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(lastRepositoryPath);
   }
 });
 
@@ -543,6 +543,6 @@ test('reads base...head and base..head positionals as a range source', async () 
       readCommandLine(['codiff', 'nope...nada', repositoryPath]).launchOptions.source,
     ).toBeUndefined();
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });

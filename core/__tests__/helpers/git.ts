@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises';
+
 export const getGitTestEnvironment = (
   overrides: Readonly<Record<string, string | undefined>> = {},
 ): NodeJS.ProcessEnv => ({
@@ -15,6 +17,14 @@ export const getGitTestEnvironment = (
   GIT_CONFIG_VALUE_2: 'false',
   ...overrides,
 });
+
+export const removeGitTestDirectory = (path: string) =>
+  rm(path, {
+    force: true,
+    maxRetries: 5,
+    recursive: true,
+    retryDelay: 50,
+  });
 
 export const withGitTestEnvironment = async <T>(
   callback: () => Promise<T>,

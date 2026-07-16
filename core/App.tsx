@@ -1547,7 +1547,7 @@ export default function App() {
     return planDocument ? (
       <PlanEditorView document={planDocument} shareEnabled={sharePlanEnabled} />
     ) : (
-      <main className="loading italic">Loading…</main>
+      <main className="loading">Loading…</main>
     );
   }
 
@@ -1579,7 +1579,7 @@ export default function App() {
 
   if (!state) {
     return (
-      <main className={`loading italic${launchOptions.walkthrough ? ' codex' : ' pulse'}`}>
+      <main className={`loading${launchOptions.walkthrough ? ' codex' : ' pulse'}`}>
         {launchOptions.walkthrough ? (
           <WalkthroughProgress
             phase={walkthroughProgress.phase}

@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
-import { getGitTestEnvironment } from '../../core/__tests__/helpers/git.ts';
+import { getGitTestEnvironment, removeGitTestDirectory } from '../../core/__tests__/helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { diagnoseWalkthroughMismatch } = require('../walkthrough-diagnosis.cjs') as {
@@ -61,7 +61,7 @@ test('reports changes committed after the walkthrough was authored', async () =>
     expect(reason).toContain('committed since the walkthrough was authored');
     expect(reason).toContain('Add the feature');
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });
 
@@ -81,7 +81,7 @@ test('reports v4 hunk-id changes committed after the walkthrough was authored', 
     expect(reason).toContain('committed since the walkthrough was authored');
     expect(reason).toContain('Add the v4 feature');
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });
 
@@ -102,7 +102,7 @@ test('treats a commit that predates authoring as reverted, not committed', async
     expect(reason).toContain('reverted');
     expect(reason).not.toContain('committed since');
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });
 
@@ -119,7 +119,7 @@ test('reports never-committed paths as reverted or discarded', async () => {
 
     expect(reason).toContain('reverted or discarded');
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });
 
@@ -134,6 +134,6 @@ test('defers to the caller when the diff still has files', async () => {
       }),
     ).toBeNull();
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });

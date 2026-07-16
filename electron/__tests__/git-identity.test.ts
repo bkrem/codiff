@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
+import { removeGitTestDirectory } from '../../core/__tests__/helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { readGitIdentity } = require('../git-state/working-tree.cjs') as {
@@ -46,7 +47,7 @@ test('uses configured git identity without inferring it from the current commit 
       name: '',
     });
   } finally {
-    await rm(repo, { force: true, recursive: true });
+    await removeGitTestDirectory(repo);
   }
 });
 
@@ -68,6 +69,6 @@ test('reads the global git identity outside a repository', async () => {
     } else {
       process.env.GIT_CONFIG_GLOBAL = previousGlobalConfig;
     }
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });

@@ -6,7 +6,6 @@ import {
   mkdtemp,
   readFile,
   realpath,
-  rm,
   truncate,
   writeFile,
 } from 'node:fs/promises';
@@ -22,6 +21,7 @@ import {
 } from '../../bin/arguments.js';
 import type { PlanReview } from '../types.ts';
 import { createFakeCommandLogger, createFakeOpenLogger } from './helpers/cli.ts';
+import { removeGitTestDirectory } from './helpers/git.ts';
 import { getGitTestEnvironment } from './helpers/git.ts';
 
 const execFileAsync = promisify(execFile);
@@ -53,7 +53,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (refRepositoryPath) {
-    await rm(refRepositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(refRepositoryPath);
   }
 });
 
@@ -181,7 +181,7 @@ test('parseArguments keeps existing hash-like paths as repository paths', async 
       walkthrough: false,
     });
   } finally {
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -212,7 +212,7 @@ test.sequential('parseArguments does not inspect Git refs for plan working direc
     expect(await readFile(gitMarker, 'utf8').catch(() => null)).toBeNull();
   } finally {
     process.env.PATH = previousPath;
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 
@@ -383,7 +383,7 @@ test('resolvePullRequestUrl builds GitHub PR URLs from the origin remote', async
       'https://github.com/nkzw-tech/codiff/pull/75',
     );
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -403,7 +403,7 @@ test('resolvePullRequestUrl builds GitLab MR URLs from an arbitrary GitLab remot
       'https://gitlab.example.com/group/subgroup/project/-/merge_requests/23',
     );
   } finally {
-    await rm(repositoryPath, { force: true, recursive: true });
+    await removeGitTestDirectory(repositoryPath);
   }
 });
 
@@ -910,7 +910,7 @@ test('Codex skill launcher resolves handled plan comments', async () => {
       review.threads[1],
     ]);
   } finally {
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });
 

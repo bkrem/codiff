@@ -1,9 +1,11 @@
+import { availableParallelism } from 'node:os';
 import { resolve } from 'node:path';
 import nkzw from '@nkzw/oxlint-config';
 import babel from '@rolldown/plugin-babel';
-import tailwindcss from '@tailwindcss/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { defineConfig } from 'vite-plus';
+
+const testWorkers = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 6)));
 
 export default defineConfig({
   base: './',
@@ -16,9 +18,6 @@ export default defineConfig({
     },
     experimentalSortPackageJson: {
       sortScripts: true,
-    },
-    experimentalTailwindcss: {
-      stylesheet: 'core/App.css',
     },
     ignorePatterns: [
       'coverage/',
@@ -68,7 +67,6 @@ export default defineConfig({
     babel({
       presets: [reactCompilerPreset()],
     }),
-    tailwindcss(),
     react(),
   ],
   resolve: {
@@ -95,7 +93,7 @@ export default defineConfig({
   },
   test: {
     include: ['core/**/*.test.{ts,tsx}', 'electron/**/*.test.ts'],
-    maxWorkers: 6,
+    maxWorkers: testWorkers,
     setupFiles: ['./core/__tests__/setup.ts'],
   },
   worker: {

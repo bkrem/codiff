@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
+import { removeGitTestDirectory } from '../../core/__tests__/helpers/git.ts';
 
 const require = createRequire(import.meta.url);
 const { submitPullRequestReview } = require('../git-state/pull-request.cjs') as {
@@ -151,6 +152,6 @@ process.stdin.on('end', () => {
     } else {
       process.env.CODIFF_GITHUB_REVIEW_TEST_CALLS = previousCallsPath;
     }
-    await rm(directory, { force: true, recursive: true });
+    await removeGitTestDirectory(directory);
   }
 });

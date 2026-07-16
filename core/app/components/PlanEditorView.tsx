@@ -835,7 +835,7 @@ export function PlanEditorView({
   }, []);
 
   if (!review) {
-    return <main className="loading italic">Loading…</main>;
+    return <main className="loading">Loading…</main>;
   }
 
   return (
