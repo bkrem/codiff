@@ -294,6 +294,54 @@ test('headless plan share works outside Git without invoking it', async () => {
   }
 });
 
+test('headless walkthrough share resolves GitHub PR branch targets', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-headless-pr-branch-'));
+  const fakeBin = join(directory, 'bin');
+  const ghArgsPath = join(directory, 'gh-args.txt');
+  const repositoryPath = join(directory, 'repo');
+  const walkthroughFile = join(directory, 'walkthrough.json');
+
+  try {
+    await mkdir(fakeBin);
+    await mkdir(repositoryPath);
+    await writeFile(walkthroughFile, '{}');
+    await writeFile(
+      join(fakeBin, 'gh'),
+      '#!/bin/sh\nfor arg in "$@"; do\n  printf "%s\\n" "$arg" >> "$GH_ARGS_FILE"\ndone\nprintf "%s\\n" \'{"state":"MERGED","url":"https://github.com/nkzw-tech/codiff/pull/127"}\'\n',
+    );
+    await chmod(join(fakeBin, 'gh'), 0o755);
+
+    await expect(
+      execFileAsync(
+        process.execPath,
+        [
+          resolve('bin/share-codiff.mjs'),
+          '--file',
+          walkthroughFile,
+          'pr',
+          'owner:merged-branch',
+          repositoryPath,
+        ],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            GH_ARGS_FILE: ghArgsPath,
+            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        'Could not find an open GitHub pull request for branch "owner:merged-branch".',
+      ),
+    });
+    expect(await readFile(ghArgsPath, 'utf8')).toContain('owner:merged-branch\n');
+  } finally {
+    await removeGitTestDirectory(directory);
+  }
+});
+
 test('codiff --share falls back to HEAD for a clean working tree and prints only its URL', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'codiff-generate-share-'));
   const repositoryPath = join(directory, 'repo');

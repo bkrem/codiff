@@ -17,6 +17,7 @@ import {
   formatHelpText,
   getReviewSource,
   parseArguments,
+  resolvePullRequestTargetUrl,
   resolvePullRequestUrl,
 } from '../../bin/arguments.js';
 import type { PlanReview } from '../types.ts';
@@ -64,6 +65,43 @@ const withCwd = async <T>(cwd: string, callback: () => T | Promise<T>) => {
     return await callback();
   } finally {
     process.chdir(previousCwd);
+  }
+};
+
+const withFakeGitHubCli = async <T>(
+  response: Record<string, unknown>,
+  callback: (argsPath: string) => T | Promise<T>,
+) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-cli-gh-'));
+  const argsPath = join(directory, 'args.txt');
+  const commandPath = join(directory, 'gh');
+  const previousArgsPath = process.env.CODIFF_TEST_GH_ARGS;
+  const previousPath = process.env.PATH;
+  const previousResponse = process.env.CODIFF_TEST_GH_RESPONSE;
+
+  try {
+    await writeFile(
+      commandPath,
+      '#!/bin/sh\nfor arg in "$@"; do\n  printf "%s\\n" "$arg" >> "$CODIFF_TEST_GH_ARGS"\ndone\nprintf "%s\\n" "$CODIFF_TEST_GH_RESPONSE"\n',
+    );
+    await chmod(commandPath, 0o755);
+    process.env.CODIFF_TEST_GH_ARGS = argsPath;
+    process.env.CODIFF_TEST_GH_RESPONSE = JSON.stringify(response);
+    process.env.PATH = `${directory}:${previousPath ?? ''}`;
+    return await callback(argsPath);
+  } finally {
+    if (previousArgsPath == null) {
+      delete process.env.CODIFF_TEST_GH_ARGS;
+    } else {
+      process.env.CODIFF_TEST_GH_ARGS = previousArgsPath;
+    }
+    if (previousResponse == null) {
+      delete process.env.CODIFF_TEST_GH_RESPONSE;
+    } else {
+      process.env.CODIFF_TEST_GH_RESPONSE = previousResponse;
+    }
+    process.env.PATH = previousPath;
+    await removeGitTestDirectory(directory);
   }
 };
 
@@ -255,6 +293,17 @@ test('parseArguments treats PR marker arguments as review sources', () => {
   });
 });
 
+test('parseArguments treats GitHub PR branch markers as review sources', () => {
+  expect(
+    parseArguments(['pr', 'iminoso:feat/pr-branch-lookup', '/path/to/repository']),
+  ).toMatchObject({
+    pullRequestBranch: 'iminoso:feat/pr-branch-lookup',
+    pullRequestNumber: null,
+    pullRequestProvider: 'github',
+    requestedPath: '/path/to/repository',
+  });
+});
+
 test('parseArguments recognizes Codex walkthrough seed options', () => {
   expect(
     parseArguments([
@@ -407,6 +456,49 @@ test('resolvePullRequestUrl builds GitLab MR URLs from an arbitrary GitLab remot
   }
 });
 
+test.sequential('PR branch lookup preserves the canonical GitHub URL returned by gh', async () => {
+  await withFakeGitHubCli(
+    {
+      state: 'OPEN',
+      url: 'https://github.com/nkzw-tech/codiff/pull/129',
+    },
+    async (argsPath) => {
+      expect(
+        resolvePullRequestTargetUrl({
+          branch: 'iminoso:feat/pr-branch-lookup',
+          number: null,
+          provider: 'github',
+          repositoryPath: process.cwd(),
+          url: null,
+        }),
+      ).toBe('https://github.com/nkzw-tech/codiff/pull/129');
+      expect(await readFile(argsPath, 'utf8')).toBe(
+        ['pr', 'view', 'iminoso:feat/pr-branch-lookup', '--json', 'state,url', ''].join('\n'),
+      );
+    },
+  );
+});
+
+test.sequential('PR branch lookup rejects merged pull requests', async () => {
+  await withFakeGitHubCli(
+    {
+      state: 'MERGED',
+      url: 'https://github.com/nkzw-tech/codiff/pull/127',
+    },
+    () => {
+      expect(() =>
+        resolvePullRequestTargetUrl({
+          branch: 'owner:merged-branch',
+          number: null,
+          provider: 'github',
+          repositoryPath: process.cwd(),
+          url: null,
+        }),
+      ).toThrow('Could not find an open GitHub pull request for branch "owner:merged-branch".');
+    },
+  );
+});
+
 test('packaged terminal helper forwards --commit HEAD to Electron', async () => {
   const logger = await createFakeOpenLogger();
   const repositoryPath = join(logger.directory, 'repo');
@@ -424,6 +516,55 @@ test('packaged terminal helper forwards --commit HEAD to Electron', async () => 
       '--args',
       '--commit',
       'HEAD',
+      repositoryPath,
+    ]);
+  } finally {
+    await logger.cleanup();
+  }
+});
+
+test('packaged terminal helper resolves GitHub PR branches to canonical URLs', async () => {
+  const logger = await createFakeOpenLogger();
+  const ghArgsPath = join(logger.directory, 'gh-args.txt');
+  const ghPath = join(logger.directory, 'bin', 'gh');
+  const repositoryPath = join(logger.directory, 'repo');
+
+  try {
+    await mkdir(repositoryPath);
+    await writeFile(
+      ghPath,
+      '#!/bin/sh\nfor arg in "$@"; do\n  printf "%s\\n" "$arg" >> "$GH_ARGS_FILE"\ndone\nprintf "%s\\n" "https://github.com/nkzw-tech/codiff/pull/129"\n',
+    );
+    await chmod(ghPath, 0o755);
+
+    await execFileAsync(
+      resolve('bin/codiff-app'),
+      ['pr', 'iminoso:feat/pr-branch-lookup', repositoryPath],
+      {
+        env: {
+          ...logger.env,
+          GH_ARGS_FILE: ghArgsPath,
+        },
+      },
+    );
+
+    expect(await readFile(ghArgsPath, 'utf8')).toBe(
+      [
+        'pr',
+        'view',
+        'iminoso:feat/pr-branch-lookup',
+        '--json',
+        'state,url',
+        '--jq',
+        'select(.state == "OPEN") | .url',
+        '',
+      ].join('\n'),
+    );
+    expect(await logger.readArgs()).toEqual([
+      '-n',
+      resolve('bin/../../../..'),
+      '--args',
+      'https://github.com/nkzw-tech/codiff/pull/129',
       repositoryPath,
     ]);
   } finally {
@@ -1341,6 +1482,7 @@ test('formatHelpText includes version and all flags', () => {
   expect(text).toContain('-w');
   expect(text).toContain('codiff --share');
   expect(text).toContain('codiff --share HEAD');
+  expect(text).toContain('codiff pr owner:feature');
 });
 
 test('formatHelpText styles titles and descriptions', () => {

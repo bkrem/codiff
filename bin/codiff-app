@@ -54,6 +54,7 @@ show_help() {
   printf '  %-32s%s%s%s\n' "codiff a1b2c3d" "$gray" "Review a specific commit." "$reset"
   printf '  %-32s%s%s%s\n' "codiff '#75'" "$gray" "Review pull request #75." "$reset"
   printf '  %-32s%s%s%s\n' "codiff pr 75" "$gray" "Review pull request #75 (alternate syntax)." "$reset"
+  printf '  %-32s%s%s%s\n' "codiff pr owner:feature" "$gray" "Review the open pull request for a branch." "$reset"
   printf '  %-32s%s%s%s\n' "codiff mr 75" "$gray" "Review GitLab merge request !75." "$reset"
   printf '  %-32s%s%s%s\n' "codiff --plan plan.md" "$gray" "Edit a plan and wait for handoff." "$reset"
   printf '  %-32s%s%s%s\n' "codiff --plan plan.md --share" "$gray" "Share a Markdown plan." "$reset"
@@ -89,6 +90,7 @@ agent_backend=""
 branch_ref=""
 commit_ref=""
 pull_request_source=""
+pull_request_branch=""
 pull_request_provider=""
 source_ref=""
 walkthrough_context_path=""
@@ -102,7 +104,7 @@ expect_pi_session=0
 expect_agent=0
 expect_branch_ref=0
 expect_commit_ref=0
-expect_pull_request_number=0
+expect_pull_request_value=0
 expect_walkthrough_context=0
 expect_walkthrough_file=0
 expect_plan_file=0
@@ -219,14 +221,19 @@ for arg in "$@"; do
     continue
   fi
 
-  if [ "$expect_pull_request_number" -eq 1 ]; then
+  if [ "$expect_pull_request_value" -eq 1 ]; then
     if printf '%s' "$arg" | grep -Eq '^#?[1-9][0-9]*$'; then
       pull_request_source="#$arg"
       pull_request_source="$(printf '%s' "$pull_request_source" | tr -d '#')"
-      expect_pull_request_number=0
+      expect_pull_request_value=0
       continue
     fi
-    expect_pull_request_number=0
+    if [ "$pull_request_provider" = "pr" ]; then
+      pull_request_branch="$arg"
+      expect_pull_request_value=0
+      continue
+    fi
+    expect_pull_request_value=0
   fi
 
   case "$arg" in
@@ -330,10 +337,10 @@ for arg in "$@"; do
     *)
       if [ -z "$pull_request_source" ] && printf '%s' "$arg" | grep -Eiq '^(pr|pull-request)$'; then
         pull_request_provider="pr"
-        expect_pull_request_number=1
+        expect_pull_request_value=1
       elif [ -z "$pull_request_source" ] && printf '%s' "$arg" | grep -Eiq '^(mr|merge-request)$'; then
         pull_request_provider="mr"
-        expect_pull_request_number=1
+        expect_pull_request_value=1
       elif [ -z "$pull_request_source" ] && printf '%s' "$arg" | grep -Eq '^#[1-9][0-9]*$'; then
         pull_request_source="$arg"
       elif [ -z "$pull_request_source" ] && printf '%s' "$arg" | grep -Eq '^https?://[^/]+/(.+/)?[^/]+/(-/merge_requests|pull)/[0-9]+/?$'; then
@@ -411,6 +418,21 @@ if [ -n "$plan_result_file_path" ]; then
     /*) ;;
     *) plan_result_file_path="$PWD/$plan_result_file_path" ;;
   esac
+fi
+
+if [ -n "$pull_request_branch" ]; then
+  if ! pull_request_source="$(
+    cd "$repository_path" 2>/dev/null &&
+      gh pr view "$pull_request_branch" \
+        --json state,url \
+        --jq 'select(.state == "OPEN") | .url' 2>/dev/null
+  )" || [ -z "$pull_request_source" ]; then
+    printf '%s\n' \
+      "codiff: Could not find an open GitHub pull request for branch \"$pull_request_branch\"." \
+      >&2
+    exit 1
+  fi
+  pull_request_provider=""
 fi
 
 open_codiff() {

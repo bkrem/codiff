@@ -51,8 +51,12 @@ Review a GitHub pull request or GitLab merge request using the current repositor
 
 ```bash
 codiff pr 75
+codiff pr owner:my-feature-branch
 codiff mr 23
 ```
+
+Branch lookup uses `gh` and selects an open GitHub pull request. Include `owner:` for pull
+requests from forks.
 
 Full GitHub and GitLab review URLs are also supported. GitLab hosts and nested project paths are
 derived from the URL or local Git remote and authenticated through `glab`; Codiff does not require

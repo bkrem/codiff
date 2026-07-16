@@ -94,6 +94,10 @@ const usageExamples = [
   { command: 'codiff a1b2c3d', description: 'Review a specific commit.' },
   { command: "codiff '#75'", description: 'Review pull request #75.' },
   { command: 'codiff pr 75', description: 'Review pull request #75 (alternate syntax).' },
+  {
+    command: 'codiff pr owner:feature',
+    description: 'Review the open pull request for a branch.',
+  },
   { command: 'codiff mr 75', description: 'Review GitLab merge request !75.' },
   { command: 'codiff --plan plan.md', description: 'Edit a plan and wait for handoff.' },
   { command: 'codiff --plan plan.md --share', description: 'Share a Markdown plan.' },
@@ -250,6 +254,44 @@ const isPullRequestUrlArgument = (arg) => parseReviewUrl(arg) != null;
 export const resolvePullRequestUrl = (repositoryPath, number, provider) =>
   resolveReviewUrl(repositoryPath, number, provider);
 
+export const resolvePullRequestTargetUrl = ({ branch, number, provider, repositoryPath, url }) => {
+  if (url) {
+    return url;
+  }
+  if (branch) {
+    if (provider !== 'github') {
+      throw new Error('Pull request branch lookup is only supported for GitHub.');
+    }
+
+    const notFoundMessage = `Could not find an open GitHub pull request for branch "${branch}".`;
+    let output;
+    try {
+      output = execFileSync('gh', ['pr', 'view', branch, '--json', 'state,url'], {
+        cwd: repositoryPath,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      throw new Error(notFoundMessage);
+    }
+
+    try {
+      const pullRequest = JSON.parse(output);
+      const parsedUrl =
+        pullRequest?.state === 'OPEN' && typeof pullRequest.url === 'string'
+          ? parseReviewUrl(pullRequest.url)
+          : null;
+      if (parsedUrl?.provider === 'github') {
+        return parsedUrl.url;
+      }
+    } catch {
+      // Report invalid or unexpected `gh` output as a failed lookup.
+    }
+    throw new Error(notFoundMessage);
+  }
+  return number != null ? resolvePullRequestUrl(repositoryPath, number, provider) : null;
+};
+
 export const parseArguments = (args) => {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
@@ -275,6 +317,7 @@ export const parseArguments = (args) => {
     values.agent === 'pi'
       ? values.agent
       : null;
+  let pullRequestBranch = null;
   let pullRequestNumber = null;
   let pullRequestProvider = null;
   let pullRequestUrl = null;
@@ -305,11 +348,22 @@ export const parseArguments = (args) => {
       }
 
       const markerProvider = getReviewProviderMarker(arg);
-      const nextNumber = markerProvider
-        ? parsePullRequestNumberValue(positionals[index + 1] ?? '')
-        : null;
+      const nextValue = markerProvider ? positionals[index + 1] : null;
+      const nextNumber = nextValue ? parsePullRequestNumberValue(nextValue) : null;
       if (nextNumber != null) {
         pullRequestNumber = nextNumber;
+        pullRequestProvider = markerProvider;
+        index += 1;
+        continue;
+      }
+      if (markerProvider && nextValue && isPullRequestUrlArgument(nextValue)) {
+        pullRequestProvider = markerProvider;
+        pullRequestUrl = nextValue;
+        index += 1;
+        continue;
+      }
+      if (markerProvider === 'github' && nextValue) {
+        pullRequestBranch = nextValue;
         pullRequestProvider = markerProvider;
         index += 1;
         continue;
@@ -368,6 +422,7 @@ export const parseArguments = (args) => {
     ...(range ? { range } : {}),
     commitRef,
     help: values.help === true,
+    ...(pullRequestBranch ? { pullRequestBranch } : {}),
     pullRequestNumber,
     ...(pullRequestProvider ? { pullRequestProvider } : {}),
     pullRequestUrl,

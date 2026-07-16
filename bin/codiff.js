@@ -13,7 +13,7 @@ import {
   formatHelpText,
   getReviewSource,
   parseArguments,
-  resolvePullRequestUrl,
+  resolvePullRequestTargetUrl,
 } from './arguments.js';
 import { waitForPlanResult } from './plan-result.js';
 
@@ -131,6 +131,7 @@ const run = async () => {
     opencodeSessionId,
     piSessionId,
     planFilePath,
+    pullRequestBranch,
     pullRequestNumber,
     pullRequestProvider,
     range,
@@ -147,13 +148,15 @@ const run = async () => {
     process.exitCode = 1;
     return;
   }
-  if (!pullRequestUrl && pullRequestNumber != null) {
+  if (!pullRequestUrl && (pullRequestBranch || pullRequestNumber != null)) {
     try {
-      pullRequestUrl = resolvePullRequestUrl(
-        requestedPath,
-        pullRequestNumber,
-        pullRequestProvider ?? undefined,
-      );
+      pullRequestUrl = resolvePullRequestTargetUrl({
+        branch: pullRequestBranch,
+        number: pullRequestNumber,
+        provider: pullRequestProvider ?? undefined,
+        repositoryPath: requestedPath,
+        url: pullRequestUrl,
+      });
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);

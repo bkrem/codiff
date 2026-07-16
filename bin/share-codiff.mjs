@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import process from 'node:process';
 import packageJson from '../package.json' with { type: 'json' };
-import { getReviewSource, parseArguments, resolvePullRequestUrl } from './arguments.js';
+import { getReviewSource, parseArguments, resolvePullRequestTargetUrl } from './arguments.js';
 
 const require = createRequire(import.meta.url);
 const { shareWalkthroughFile } = require('../electron/headless-walkthrough-share.cjs');
@@ -80,12 +80,19 @@ if (planFilePath && (!existsSync(planFilePath) || !/\.md$/i.test(planFilePath)))
 
 const parsed = parseArguments(forwardedArgs);
 let pullRequestUrl = parsed.pullRequestUrl;
-if (!pullRequestUrl && parsed.pullRequestNumber != null) {
-  pullRequestUrl = resolvePullRequestUrl(
-    parsed.requestedPath,
-    parsed.pullRequestNumber,
-    parsed.pullRequestProvider,
-  );
+if (!pullRequestUrl && (parsed.pullRequestBranch || parsed.pullRequestNumber != null)) {
+  try {
+    pullRequestUrl = resolvePullRequestTargetUrl({
+      branch: parsed.pullRequestBranch,
+      number: parsed.pullRequestNumber,
+      provider: parsed.pullRequestProvider,
+      repositoryPath: parsed.requestedPath,
+      url: pullRequestUrl,
+    });
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
 }
 
 const source = getReviewSource({
