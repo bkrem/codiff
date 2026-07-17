@@ -1,3 +1,7 @@
+import { ArrowSquareOutIcon as ArrowSquareOut } from '@phosphor-icons/react/ArrowSquareOut';
+import { ClockCounterClockwiseIcon as ClockCounterClockwise } from '@phosphor-icons/react/ClockCounterClockwise';
+import { PathIcon as Path } from '@phosphor-icons/react/Path';
+import { TreeStructureIcon as TreeStructure } from '@phosphor-icons/react/TreeStructure';
 import type { FileDiffLoadedFiles } from '@pierre/diffs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommandBar } from './app/components/CommandBar.tsx';
@@ -16,6 +20,7 @@ import {
 } from './app/components/Panels.tsx';
 import { PlanEditorView } from './app/components/PlanEditorView.tsx';
 import { ReviewCodeView, type ReviewDiffBlock } from './app/components/ReviewCodeView.tsx';
+import { ReviewTopBar, type ReviewModeItem } from './app/components/ReviewTopBar.tsx';
 import { Sidebar } from './app/components/Sidebar.tsx';
 import { CommitView } from './app/components/walkthrough/CommitView.tsx';
 import {
@@ -1602,9 +1607,10 @@ export default function App() {
       walkthroughError?.code === 'OPENCODE_NOT_FOUND' ||
       walkthroughError?.code === 'PI_NOT_FOUND');
 
-  const sidebarLabel = `${compactPath(state.root)}${state.branch ? ` (${state.branch})` : ''}`;
+  const sidebarLabel = compactPath(state.root);
   const sidebarSourceLabel =
-    state.source.type !== 'working-tree' ? ` · ${getSourceLabel(state.source)}` : '';
+    state.source.type !== 'working-tree' ? getSourceLabel(state.source) : null;
+  const pullRequestUrl = state.source.type === 'pull-request' ? state.source.url : null;
   const emptySourceDetail = getEmptySourceDetail(state.source, state.root);
 
   const diffLineHeight = getCodeFontLineHeight(
@@ -1698,6 +1704,24 @@ export default function App() {
       />
     );
   };
+  const reviewModes = [
+    {
+      icon: <Path aria-hidden size={14} weight="bold" />,
+      indicator: walkthroughUnread ? <span aria-hidden className="review-mode-dot" /> : undefined,
+      label: 'Walkthrough',
+      value: 'walkthrough',
+    },
+    {
+      icon: <TreeStructure aria-hidden size={14} weight="bold" />,
+      label: 'Tree',
+      value: 'tree',
+    },
+    {
+      icon: <ClockCounterClockwise aria-hidden size={14} weight="bold" />,
+      label: 'History',
+      value: 'history',
+    },
+  ] satisfies ReadonlyArray<ReviewModeItem<typeof sidebarMode>>;
 
   return (
     <div
@@ -1709,35 +1733,56 @@ export default function App() {
       }
     >
       <div aria-hidden className="window-drag-region" />
-      {sidebarCollapsed ? (
-        <div className="collapsed-sidebar-bar">
-          <button
-            className="sidebar-toggle-button"
-            onClick={expandSidebar}
-            title={`Expand sidebar (${getShortcutLabel(codiffConfig.keymap, 'toggleSidebar')})`}
-            type="button"
-          >
-            <svg
-              aria-hidden
-              fill="none"
-              height="16"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              width="16"
+      <ReviewTopBar
+        context={
+          <>
+            {state.branch ? (
+              <span className="review-top-bar-branch" title={state.branch}>
+                {state.branch}
+              </span>
+            ) : null}
+            {sidebarSourceLabel ? (
+              pullRequestUrl ? (
+                <a
+                  className="review-top-bar-source"
+                  href={pullRequestUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span>{sidebarSourceLabel}</span>
+                  <ArrowSquareOut aria-hidden size={14} weight="bold" />
+                </a>
+              ) : (
+                <span className="review-top-bar-source">{sidebarSourceLabel}</span>
+              )
+            ) : null}
+          </>
+        }
+        mode={sidebarMode}
+        modes={reviewModes}
+        onModeChange={changeSidebarMode}
+        onToggleSidebar={toggleSidebar}
+        repository={
+          pullRequestUrl ? (
+            <a
+              className="review-top-bar-repository"
+              href={pullRequestUrl}
+              rel="noreferrer"
+              target="_blank"
             >
-              <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
-              <line x1="9" x2="9" y1="3" y2="21" />
-            </svg>
-          </button>
-          <div className="collapsed-sidebar-label" title={state.root}>
-            {sidebarLabel}
-            {sidebarSourceLabel}
-          </div>
-        </div>
-      ) : null}
+              {sidebarLabel}
+            </a>
+          ) : (
+            <span className="review-top-bar-repository">{sidebarLabel}</span>
+          )
+        }
+        repositoryTooltip={state.root}
+        sidebarCollapsed={sidebarCollapsed}
+        toggleTitle={`${sidebarCollapsed ? 'Expand' : 'Collapse'} sidebar (${getShortcutLabel(
+          codiffConfig.keymap,
+          'toggleSidebar',
+        )})`}
+      />
       <RepositoryChangeBanner
         onRefresh={refreshRepository}
         visible={
@@ -1780,35 +1825,6 @@ export default function App() {
         </div>
       ) : null}
       <aside className="squircle sidebar">
-        <div className="sidebar-header">
-          <div className="sidebar-path-row">
-            <button
-              className="sidebar-toggle-button"
-              onClick={toggleSidebar}
-              title={`Collapse sidebar (${getShortcutLabel(codiffConfig.keymap, 'toggleSidebar')})`}
-              type="button"
-            >
-              <svg
-                aria-hidden
-                fill="none"
-                height="16"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-                width="16"
-              >
-                <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
-                <line x1="9" x2="9" y1="3" y2="21" />
-              </svg>
-            </button>
-            <div className="sidebar-path" title={state.root}>
-              {sidebarLabel}
-              {sidebarSourceLabel}
-            </div>
-          </div>
-        </div>
         <Sidebar
           branchSource={
             historySource?.type === 'branch-diff'
@@ -1837,7 +1853,6 @@ export default function App() {
           narrativeWalkthrough={narrativeWalkthrough}
           onActivatePath={activatePath}
           onLoadMoreHistory={loadMoreHistory}
-          onModeChange={changeSidebarMode}
           onSearchQueryChange={
             sidebarMode === 'history' ? setHistorySearchQuery : setFileSearchQuery
           }
@@ -1854,7 +1869,6 @@ export default function App() {
           walkthroughError={walkthroughError}
           walkthroughLoading={walkthroughLoading}
           walkthroughProgress={walkthroughProgress}
-          walkthroughUnread={walkthroughUnread}
         />
       </aside>
       <div aria-hidden className="sidebar-resizer" onPointerDown={resizeSidebar} />

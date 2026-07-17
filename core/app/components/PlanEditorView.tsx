@@ -840,7 +840,7 @@ export function PlanEditorView({
 
   return (
     <main className="plan-shell">
-      <header className="plan-header">
+      <header className="plan-header workspace-top-bar">
         <div className="plan-title" title={document.path}>
           {document.path}
         </div>

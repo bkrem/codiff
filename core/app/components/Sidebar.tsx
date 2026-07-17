@@ -38,7 +38,6 @@ export function Sidebar({
   narrativeWalkthrough,
   onActivatePath,
   onLoadMoreHistory,
-  onModeChange,
   onSearchQueryChange,
   onSelectSource,
   onShareWalkthrough,
@@ -53,7 +52,6 @@ export function Sidebar({
   walkthroughError,
   walkthroughLoading,
   walkthroughProgress,
-  walkthroughUnread,
 }: {
   branchSource: Extract<ReviewSource, { type: 'branch-diff' }> | null;
   commitFiles: ReadonlyArray<ChangedFile>;
@@ -69,7 +67,6 @@ export function Sidebar({
   narrativeWalkthrough: NarrativeWalkthrough | null;
   onActivatePath: (path: string) => void;
   onLoadMoreHistory: () => void;
-  onModeChange: (mode: SidebarMode) => void;
   onSearchQueryChange: (query: string) => void;
   onSelectSource: (source: ReviewSource) => void;
   onShareWalkthrough?: () => void;
@@ -88,7 +85,6 @@ export function Sidebar({
     responseLabelIndex: number;
     stageRevision: number;
   };
-  walkthroughUnread: boolean;
 }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lineCountsByPath = useMemo(
@@ -130,33 +126,6 @@ export function Sidebar({
           type="search"
           value={searchQuery}
         />
-      </div>
-      <div aria-label="Review order" className="sidebar-mode-toggle" role="tablist">
-        <button
-          aria-selected={mode === 'tree'}
-          onClick={() => onModeChange('tree')}
-          role="tab"
-          type="button"
-        >
-          Tree
-        </button>
-        <button
-          aria-selected={mode === 'walkthrough'}
-          onClick={() => onModeChange('walkthrough')}
-          role="tab"
-          type="button"
-        >
-          <span>Walkthrough</span>
-          {walkthroughUnread ? <span aria-hidden className="sidebar-tab-dot" /> : null}
-        </button>
-        <button
-          aria-selected={mode === 'history'}
-          onClick={() => onModeChange('history')}
-          role="tab"
-          type="button"
-        >
-          History
-        </button>
       </div>
       {mode === 'history' ? (
         <HistorySidebar

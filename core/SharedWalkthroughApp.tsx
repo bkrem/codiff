@@ -1,4 +1,8 @@
-import { ExternalLink, Trash2 } from 'lucide-react';
+import { ArrowSquareOutIcon as ArrowSquareOut } from '@phosphor-icons/react/ArrowSquareOut';
+import { ChatCircleIcon as ChatCircle } from '@phosphor-icons/react/ChatCircle';
+import { PathIcon as Path } from '@phosphor-icons/react/Path';
+import { TreeStructureIcon as TreeStructure } from '@phosphor-icons/react/TreeStructure';
+import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from './app/components/Button.tsx';
 import { ReviewFileTree } from './app/components/FileTree.tsx';
@@ -19,6 +23,7 @@ import {
   ReviewCodeView,
   type ReviewDiffBlock,
 } from './app/components/ReviewCodeView.tsx';
+import { ReviewTopBar, type ReviewModeItem } from './app/components/ReviewTopBar.tsx';
 import { DiffLineCountBadge } from './app/components/Sidebar.tsx';
 import { NarrativeSidebar } from './app/components/walkthrough/NarrativeSidebar.tsx';
 import {
@@ -37,6 +42,7 @@ import { useResizableSidebar } from './app/hooks/useResizableSidebar.ts';
 import { useReviewCommentDrafts } from './app/hooks/useReviewCommentDrafts.ts';
 import { useReviewFileState } from './app/hooks/useReviewState.ts';
 import { createDefaultConfig } from './config/defaults.ts';
+import { matchesShortcut } from './config/keymap.ts';
 import { getAgentLabel } from './lib/app-constants.ts';
 import type { CodeViewInstance, ReviewComment, ReviewScrollTarget } from './lib/app-types.ts';
 import {
@@ -56,7 +62,12 @@ import {
   toPullRequestReviewComment,
 } from './lib/review-comments.ts';
 import { getSelectedPathFromScroll } from './lib/review-scroll.ts';
-import { SIDEBAR_DEFAULT_WIDTH, readSidebarWidth, writeSidebarWidth } from './lib/sidebar-width.ts';
+import {
+  SIDEBAR_COLLAPSE_THRESHOLD,
+  SIDEBAR_DEFAULT_WIDTH,
+  readSidebarWidth,
+  writeSidebarWidth,
+} from './lib/sidebar-width.ts';
 import { getSourceLabel, getSourceKey } from './lib/source.ts';
 import type {
   GitIdentity,
@@ -157,6 +168,7 @@ export type ReviewSurfaceProps = {
   onDeleteShare?: () => Promise<void> | void;
   onModeChange?: (mode: ReviewMode) => void;
   providerLabel?: string;
+  repositoryUrl?: string;
   settingsBar?: ReactNode;
   signInLabel?: string;
   snapshot: SharedWalkthroughSnapshot;
@@ -173,6 +185,7 @@ export function ReviewSurface({
   onDeleteShare,
   onModeChange,
   providerLabel = 'provider',
+  repositoryUrl,
   settingsBar,
   signInLabel = 'Sign in to comment',
   snapshot,
@@ -217,8 +230,22 @@ export function ReviewSurface({
   const [uncontrolledSidebarMode, setUncontrolledSidebarMode] = useState<ReviewMode>(
     () => initialMode ?? (interactive ? 'tree' : 'walkthrough'),
   );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || !matchesShortcut(event, keymap, 'toggleSidebar')) {
+        return;
+      }
+      event.preventDefault();
+      setSidebarCollapsed((current) => !current);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [keymap]);
   const isSidebarModeControlled = Boolean(initialMode && onModeChange);
-  const sidebarMode = isSidebarModeControlled ? initialMode : uncontrolledSidebarMode;
+  const sidebarMode =
+    isSidebarModeControlled && initialMode ? initialMode : uncontrolledSidebarMode;
   const [treeScrollTarget, setTreeScrollTarget] = useState<ReviewScrollTarget | null>(null);
   const {
     bumpItemVersion,
@@ -234,6 +261,8 @@ export function ReviewSurface({
     initialSelectedPath: snapshot.files[0]?.path ?? null,
   });
   const { resizeSidebar, sidebarWidth } = useResizableSidebar({
+    collapseThreshold: SIDEBAR_COLLAPSE_THRESHOLD,
+    onCollapse: () => setSidebarCollapsed(true),
     onWidthCommit: writeSharedSidebarWidth,
     readWidth: readSharedSidebarWidth,
   });
@@ -853,9 +882,16 @@ export function ReviewSurface({
 
   const sourceLabel =
     snapshot.repository.source.type === 'working-tree'
-      ? ''
-      : ` · ${getSourceLabel(snapshot.repository.source)}`;
-  const rootLabel = `${compactPath(snapshot.repository.root)}${snapshot.branch ? ` (${snapshot.branch})` : ''}`;
+      ? null
+      : getSourceLabel(snapshot.repository.source);
+  const rootLabel = repositoryUrl
+    ? snapshot.repository.root
+    : compactPath(snapshot.repository.root);
+  const sourceExternalUrl =
+    snapshot.repository.source.type === 'pull-request'
+      ? (externalUrl ?? snapshot.repository.source.url)
+      : null;
+  const repositoryLinkUrl = repositoryUrl ?? sourceExternalUrl;
   const walkthroughStatus =
     walkthroughRequestPending && interactive?.walkthroughStatus !== 'ready'
       ? 'generating'
@@ -884,52 +920,138 @@ export function ReviewSurface({
   const requestWalkthrough = () => {
     startWalkthroughGeneration();
   };
+  const reviewModes = [
+    {
+      icon: <Path aria-hidden size={14} weight="bold" />,
+      label: 'Walkthrough',
+      value: 'walkthrough',
+    },
+    {
+      icon: <TreeStructure aria-hidden size={14} weight="bold" />,
+      label: 'Tree',
+      value: 'tree',
+    },
+    ...(showCommentsTab
+      ? [
+          {
+            ariaLabel: generalCommentCount > 0 ? `Comments (${generalCommentCount})` : 'Comments',
+            icon: <ChatCircle aria-hidden size={14} weight="bold" />,
+            indicator:
+              generalCommentCount > 0 ? (
+                <span aria-hidden className="review-mode-count">
+                  {generalCommentCount}
+                </span>
+              ) : undefined,
+            label: 'Comments',
+            title:
+              generalCommentCount > 0
+                ? `${generalCommentCount} ${generalCommentCount === 1 ? 'comment' : 'comments'}`
+                : 'Comments',
+            value: 'comments' as const,
+          },
+        ]
+      : []),
+  ] satisfies ReadonlyArray<ReviewModeItem<ReviewMode>>;
+  const topBarActions =
+    onDeleteShare || settingsBar ? (
+      <>
+        {onDeleteShare ? (
+          <Button
+            action={deleteShare}
+            aria-label="Delete shared walkthrough"
+            pendingPlaceholder="…"
+            size="icon"
+            title="Delete shared walkthrough"
+            type="button"
+            variant="destructive"
+          >
+            <Trash2 aria-hidden size={16} />
+          </Button>
+        ) : null}
+        {settingsBar ? <div className="review-top-bar-settings">{settingsBar}</div> : null}
+      </>
+    ) : undefined;
 
   return (
     <div
-      className={`app-shell share-shell${interactive ? ' merge-request-shell' : ''}`}
+      className={`app-shell share-shell${interactive ? ' merge-request-shell' : ''}${
+        sidebarCollapsed ? ' sidebar-collapsed' : ''
+      }`}
       data-theme={shellTheme}
-      style={{ gridTemplateColumns: `${sidebarWidth}px 0 minmax(0, 1fr)` }}
+      style={
+        sidebarCollapsed ? undefined : { gridTemplateColumns: `${sidebarWidth}px 0 minmax(0, 1fr)` }
+      }
     >
-      <aside className="squircle sidebar">
-        <div className="sidebar-header">
-          <div className="sidebar-path-row">
-            {interactive ? (
-              <button
-                aria-label="Back to Codiff"
-                className="merge-request-nav-button merge-request-home-button"
-                onClick={interactive.onHome}
-                title="Back to Codiff"
-                type="button"
-              >
-                <img
-                  alt=""
-                  aria-hidden
-                  className="merge-request-nav-icon"
-                  draggable={false}
-                  src="/icon.png"
-                />
-              </button>
+      <ReviewTopBar
+        actions={topBarActions}
+        context={
+          <>
+            {snapshot.branch ? (
+              <span className="review-top-bar-branch" title={snapshot.branch}>
+                {snapshot.branch}
+              </span>
             ) : null}
-            <div className="sidebar-path" title={title ?? snapshot.repository.root}>
-              {title ? `${title} · ` : null}
+            {sourceLabel ? (
+              sourceExternalUrl ? (
+                <a
+                  aria-label={`Open ${sourceLabel} in ${providerLabel}`}
+                  className="review-top-bar-source"
+                  href={sourceExternalUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                  title={`Open ${sourceLabel} in ${providerLabel}`}
+                >
+                  <span>{sourceLabel}</span>
+                  <ArrowSquareOut aria-hidden size={14} weight="bold" />
+                </a>
+              ) : (
+                <span className="review-top-bar-source">{sourceLabel}</span>
+              )
+            ) : null}
+          </>
+        }
+        leading={
+          interactive ? (
+            <button
+              aria-label="Back to Codiff"
+              className="merge-request-nav-button merge-request-home-button"
+              onClick={interactive.onHome}
+              title="Back to Codiff"
+              type="button"
+            >
+              <img
+                alt=""
+                aria-hidden
+                className="merge-request-nav-icon"
+                draggable={false}
+                src="/icon.png"
+              />
+            </button>
+          ) : undefined
+        }
+        mode={sidebarMode}
+        modes={reviewModes}
+        onModeChange={changeSidebarMode}
+        onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
+        repository={
+          repositoryLinkUrl ? (
+            <a
+              className="review-top-bar-repository"
+              href={repositoryLinkUrl}
+              rel="noreferrer"
+              target={repositoryUrl ? undefined : '_blank'}
+            >
               {rootLabel}
-              {sourceLabel}
-            </div>
-            {externalUrl ? (
-              <a
-                aria-label={`Open merge request in ${providerLabel}`}
-                className="merge-request-nav-button"
-                href={externalUrl}
-                rel="noreferrer"
-                target="_blank"
-                title={`Open merge request in ${providerLabel}`}
-              >
-                <ExternalLink aria-hidden size={16} />
-              </a>
-            ) : null}
-          </div>
-        </div>
+            </a>
+          ) : (
+            <span className="review-top-bar-repository">{rootLabel}</span>
+          )
+        }
+        repositoryTooltip={snapshot.repository.root}
+        sidebarCollapsed={sidebarCollapsed}
+        toggleTitle={`${sidebarCollapsed ? 'Expand' : 'Collapse'} sidebar`}
+      />
+      <aside className="squircle sidebar">
         <div className="sidebar-search-row">
           <input
             aria-label="Filter changed files"
@@ -940,51 +1062,6 @@ export function ReviewSurface({
             type="search"
             value={fileSearchQuery}
           />
-        </div>
-        <div
-          aria-label="Review order"
-          className={`sidebar-mode-toggle${showCommentsTab ? ' sidebar-mode-toggle-with-comments' : ''}`}
-          role="tablist"
-        >
-          <button
-            aria-selected={sidebarMode === 'tree'}
-            onClick={() => changeSidebarMode('tree')}
-            role="tab"
-            type="button"
-          >
-            Tree
-          </button>
-          <button
-            aria-selected={sidebarMode === 'walkthrough'}
-            onClick={() => changeSidebarMode('walkthrough')}
-            role="tab"
-            type="button"
-          >
-            Walkthrough
-          </button>
-          {showCommentsTab ? (
-            <button
-              aria-label={
-                generalCommentCount > 0 ? `Comments (${generalCommentCount})` : 'Comments'
-              }
-              aria-selected={sidebarMode === 'comments'}
-              onClick={() => changeSidebarMode('comments')}
-              role="tab"
-              title={
-                generalCommentCount > 0
-                  ? `${generalCommentCount} ${generalCommentCount === 1 ? 'comment' : 'comments'}`
-                  : 'Comments'
-              }
-              type="button"
-            >
-              <span>Comments</span>
-              {generalCommentCount > 0 ? (
-                <span aria-hidden className="sidebar-tab-count">
-                  {generalCommentCount}
-                </span>
-              ) : null}
-            </button>
-          ) : null}
         </div>
         {sidebarMode === 'tree' ? (
           <ReviewFileTree
@@ -1026,29 +1103,13 @@ export function ReviewSurface({
             </div>
           </div>
         )}
-        {onDeleteShare || settingsBar || showTotalLineCount ? (
+        {showTotalLineCount ? (
           <div className="sidebar-settings-bar">
-            {onDeleteShare ? (
-              <Button
-                action={deleteShare}
-                aria-label="Delete shared walkthrough"
-                pendingPlaceholder="…"
-                size="icon"
-                title="Delete shared walkthrough"
-                type="button"
-                variant="destructive"
-              >
-                <Trash2 aria-hidden size={16} />
-              </Button>
-            ) : null}
-            {settingsBar}
-            {showTotalLineCount ? (
-              <DiffLineCountBadge
-                ariaLabelPrefix="Total change"
-                className="sidebar-total-line-count sidebar-settings-line-count"
-                lineCount={totalLineCount}
-              />
-            ) : null}
+            <DiffLineCountBadge
+              ariaLabelPrefix="Total change"
+              className="sidebar-total-line-count sidebar-settings-line-count"
+              lineCount={totalLineCount}
+            />
           </div>
         ) : null}
       </aside>

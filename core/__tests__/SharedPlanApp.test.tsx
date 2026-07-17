@@ -177,6 +177,7 @@ test('shared plans render Markdown and comments read-only', async () => {
     });
 
     expect(container.querySelector('.plan-title')?.textContent).toBe('Ship plan sharing');
+    expect(container.querySelector('.plan-header.workspace-top-bar')).not.toBeNull();
     expect(container.querySelector('.codiff-file-path')?.textContent).toBe('plan.md');
     expect(
       container.querySelector('.codiff-header-toggle-static .codiff-file-path')?.textContent,

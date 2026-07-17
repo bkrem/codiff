@@ -5,6 +5,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { expect, test, vi } from 'vite-plus/test';
+import { ReviewTopBar } from '../app/components/ReviewTopBar.tsx';
 import { ReviewSurface, type ReviewCommenting } from '../SharedWalkthroughApp.tsx';
 import type { NarrativeWalkthrough, SharedWalkthroughSnapshot } from '../types.ts';
 import { createChangedFile } from './helpers/fixtures.ts';
@@ -64,12 +65,49 @@ const commenting = {
   onUpdateGeneralComment: async () => {},
 } satisfies ReviewCommenting;
 
+test('review top bar renders its leading control at the far left', async () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      <ReviewTopBar
+        leading={<button className="codiff-logo">Codiff</button>}
+        mode="tree"
+        modes={[{ icon: null, label: 'Tree', value: 'tree' }]}
+        onModeChange={() => {}}
+        onToggleSidebar={() => {}}
+        repository="cloudflare/voidzero/codiff-web"
+        sidebarCollapsed={false}
+        toggleTitle="Collapse sidebar"
+      />,
+    );
+  });
+
+  const leftRegion = container.querySelector('.review-top-bar-left');
+  expect(leftRegion?.firstElementChild?.className).toBe('codiff-logo');
+  expect(leftRegion?.nextElementSibling?.classList.contains('review-mode-control')).toBe(true);
+  expect(leftRegion?.nextElementSibling?.nextElementSibling?.className).toBe(
+    'review-top-bar-right',
+  );
+
+  await act(async () => root.unmount());
+  container.remove();
+});
+
 test('shared walkthroughs switch between walkthrough and tree review modes', async () => {
   const onDeleteShare = vi.fn();
   const confirmDelete = vi.spyOn(window, 'confirm').mockReturnValue(false);
   const file = createChangedFile('src/app.ts');
   const markdownFile = createMarkdownFile();
-  const source = { type: 'working-tree' } as const;
+  const source = {
+    number: 31,
+    projectPath: 'cloudflare/voidzero/codiff-web',
+    provider: 'gitlab',
+    type: 'pull-request',
+    url: 'https://gitlab.example.com/cloudflare/voidzero/codiff-web/-/merge_requests/31',
+  } as const;
   const walkthrough = {
     agent: 'codex',
     chapters: [
@@ -129,7 +167,7 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
       wordWrap: false,
     },
     repository: {
-      root: 'Shared Codiff review',
+      root: 'cloudflare/voidzero/codiff-web',
       source,
     },
     version: 1,
@@ -144,7 +182,14 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
     await act(async () => {
       root = createRoot(container);
       root.render(
-        <ReviewSurface commenting={commenting} onDeleteShare={onDeleteShare} snapshot={snapshot} />,
+        <ReviewSurface
+          commenting={commenting}
+          onDeleteShare={onDeleteShare}
+          providerLabel="GitLab"
+          repositoryUrl="/cloudflare/voidzero/codiff-web"
+          snapshot={snapshot}
+          title="Review shared walkthrough"
+        />,
       );
     });
 
@@ -157,7 +202,7 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
     const deleteShare = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Delete shared walkthrough"]',
     );
-    expect(deleteShare?.closest('.sidebar-settings-bar')).not.toBeNull();
+    expect(deleteShare?.closest('.review-top-bar-actions')).not.toBeNull();
     await act(async () => deleteShare?.click());
     expect(confirmDelete).toHaveBeenCalledWith(
       'Delete this shared walkthrough? This cannot be undone.',
@@ -170,17 +215,38 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
     const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
 
     const tablist = container.querySelector('[role="tablist"]');
-    expect(tablist?.classList.contains('sidebar-mode-toggle-with-comments')).toBe(true);
+    expect(tablist?.classList.contains('review-mode-control')).toBe(true);
+    const topBar = tablist?.closest('.review-top-bar');
+    expect(topBar).not.toBeNull();
+    expect(topBar?.textContent).not.toContain('Review shared walkthrough');
+    expect(topBar?.textContent).not.toContain('·');
+    const repositoryLink = container.querySelector<HTMLAnchorElement>('.review-top-bar-repository');
+    expect(repositoryLink?.getAttribute('href')).toBe('/cloudflare/voidzero/codiff-web');
+    expect(repositoryLink?.textContent).toContain('cloudflare/voidzero/codiff-web');
+    expect(repositoryLink?.closest('.review-top-bar-left')).not.toBeNull();
+    const branchBadge = container.querySelector<HTMLElement>('.review-top-bar-branch');
+    expect(branchBadge?.textContent).toBe('main');
+    expect(branchBadge?.closest('.review-top-bar-right')).not.toBeNull();
+    expect(topBar?.textContent).not.toContain('(main)');
+    const sourceLink = container.querySelector<HTMLAnchorElement>('.review-top-bar-source');
+    expect(sourceLink?.getAttribute('href')).toBe(
+      'https://gitlab.example.com/cloudflare/voidzero/codiff-web/-/merge_requests/31',
+    );
+    expect(sourceLink?.textContent).toBe('MR #31');
+    expect(sourceLink?.querySelector('svg')).not.toBeNull();
+    expect(sourceLink?.closest('.review-top-bar-right')).not.toBeNull();
+    expect(container.querySelector('.review-top-bar-actions a')).toBeNull();
+    expect(deleteShare?.closest('.review-top-bar-right')).not.toBeNull();
     const tabs = tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [];
     expect(tabs).toHaveLength(3);
-    expect(tabs[0]?.textContent).toBe('Tree');
-    expect(tabs[0]?.getAttribute('aria-selected')).toBe('false');
-    expect(tabs[1]?.textContent).toBe('Walkthrough');
-    expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+    expect(tabs[0]?.textContent).toBe('Walkthrough');
+    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
+    expect(tabs[1]?.textContent).toBe('Tree');
+    expect(tabs[1]?.getAttribute('aria-selected')).toBe('false');
     expect(tabs[2]?.textContent).toBe('Comments');
 
     await act(async () => {
-      tabs[0]?.click();
+      tabs[1]?.click();
     });
 
     await waitFor(() => {
@@ -193,8 +259,33 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
         ({ textContent }) => textContent === 'View as Markdown',
       ),
     ).toBe(true);
-    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
-    expect(tabs[1]?.getAttribute('aria-selected')).toBe('false');
+    expect(tabs[0]?.getAttribute('aria-selected')).toBe('false');
+    expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+
+    const sidebarToggle = container.querySelector<HTMLButtonElement>(
+      '.review-top-bar .sidebar-toggle-button',
+    );
+    expect(sidebarToggle?.getAttribute('aria-label')).toBe('Collapse sidebar');
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
+          key: 'b',
+          metaKey: navigator.platform.toLowerCase().includes('mac'),
+          shiftKey: true,
+        }),
+      );
+    });
+    expect(container.querySelector('.app-shell')?.classList.contains('sidebar-collapsed')).toBe(
+      true,
+    );
+    expect(container.querySelector('.review-top-bar')).not.toBeNull();
+    expect(sidebarToggle?.getAttribute('aria-label')).toBe('Expand sidebar');
+    await act(async () => sidebarToggle?.click());
+    expect(container.querySelector('.app-shell')?.classList.contains('sidebar-collapsed')).toBe(
+      false,
+    );
 
     await act(async () => {
       if (!searchInput) {
@@ -224,7 +315,7 @@ test('shared walkthroughs switch between walkthrough and tree review modes', asy
     });
 
     await act(async () => {
-      tabs[1]?.click();
+      tabs[0]?.click();
     });
 
     await waitFor(() => {
@@ -292,7 +383,7 @@ test('shared walkthroughs initially preview Markdown when other files are genera
 
     const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     await act(async () => {
-      tabs[0]?.click();
+      tabs[1]?.click();
     });
 
     await waitFor(() => {

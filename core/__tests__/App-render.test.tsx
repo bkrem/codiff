@@ -411,7 +411,18 @@ test('stale persisted collapsed sidebar state does not hide the sidebar on launc
       false,
     );
     expect(app.container.querySelector('.sidebar')).not.toBeNull();
+    expect(app.container.querySelector('.sidebar [role="tablist"]')).toBeNull();
   });
+
+  const topBar = app.container.querySelector('.review-top-bar');
+  const modes = topBar?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [];
+  expect([...modes].map((mode) => mode.textContent)).toEqual(['Walkthrough', 'Tree', 'History']);
+  const sidebarToggle = topBar?.querySelector<HTMLButtonElement>('.sidebar-toggle-button');
+  await act(async () => sidebarToggle?.click());
+  expect(app.container.querySelector('.app-shell')?.classList.contains('sidebar-collapsed')).toBe(
+    true,
+  );
+  expect(app.container.querySelector('.review-top-bar')).toBe(topBar);
 
   await app.cleanup();
 });
@@ -1367,6 +1378,14 @@ test('pull request description collapse button toggles the markdown body', async
     await waitFor(() => {
       expect(app.container.querySelector('.source-description-markdown')).not.toBeNull();
     });
+    const repositoryLink = app.container.querySelector<HTMLAnchorElement>(
+      '.review-top-bar-repository',
+    );
+    const sourceLink = app.container.querySelector<HTMLAnchorElement>('.review-top-bar-source');
+    expect(repositoryLink?.href).toBe(source.url);
+    expect(sourceLink?.href).toBe(source.url);
+    expect(sourceLink?.textContent).toBe('PR #12');
+    expect(sourceLink?.querySelector('svg')).not.toBeNull();
 
     let toggle = app.container.querySelector<HTMLButtonElement>('button.codiff-header-toggle');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');

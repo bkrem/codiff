@@ -970,7 +970,7 @@ export function PlanReviewSurface({
       className="plan-shell shared-plan-shell"
       data-theme={snapshot.preferences.theme === 'system' ? undefined : snapshot.preferences.theme}
     >
-      <header className="plan-header">
+      <header className="plan-header workspace-top-bar">
         <div className="plan-title" title={snapshot.document.title}>
           {snapshot.document.title}
         </div>
