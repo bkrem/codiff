@@ -79,6 +79,14 @@ test('electron config normalizes code font settings', () => {
   expect(readElectronConfig({ settings: { codeFontSize: 99 } }).settings.codeFontSize).toBe(32);
 });
 
+test('electron config normalizes askAgent keymap values', () => {
+  expect(readElectronConfig({}).keymap.askAgent).toBe('Mod+Shift+Enter');
+  expect(readElectronConfig({ keymap: { askAgent: 'Alt+Enter' } }).keymap.askAgent).toBe(
+    'Alt+Enter',
+  );
+  expect(readElectronConfig({ keymap: { askAgent: 42 } }).keymap.askAgent).toBe('Mod+Shift+Enter');
+});
+
 test('electron config keeps custom walkthrough prompt text only when it is a string', () => {
   expect(
     readElectronConfig({

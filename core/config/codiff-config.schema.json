@@ -111,6 +111,11 @@
       "description": "Keyboard shortcut overrides for in-app actions. Use 'Mod' for Cmd on macOS and Ctrl on other platforms.",
       "additionalProperties": false,
       "properties": {
+        "askAgent": {
+          "type": "string",
+          "default": "Mod+Shift+Enter",
+          "description": "Ask the configured agent about the focused review comment."
+        },
         "commandBar": {
           "type": "string",
           "default": "Mod+Shift+p",
@@ -164,7 +169,7 @@
         "submitComment": {
           "type": "string",
           "default": "Mod+Enter",
-          "description": "Submit a remote review comment or ask Codex."
+          "description": "Submit a review comment, or ask the agent when comment submission is unavailable."
         },
         "discardComment": {
           "type": "string",

@@ -43,7 +43,7 @@ import claudeIconUrl from '../../assets/claude.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import opencodeIconUrl from '../../assets/opencode.svg';
 import piIconUrl from '../../assets/pi.svg';
-import { matchesShortcut } from '../../config/keymap.ts';
+import { getShortcutLabel, matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffDiffStyle, CodiffKeymap } from '../../config/types.ts';
 import type {
   CodeViewInstance,
@@ -1540,6 +1540,15 @@ function ReviewCommentEditor({
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (matchesShortcut(event, keymap, 'askAgent')) {
+        if (canAskCodex) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleAskCodex();
+        }
+        return;
+      }
+
       if (matchesShortcut(event, keymap, 'submitComment')) {
         if (supportsReviewCommentActions && commentCanSubmit) {
           event.preventDefault();
@@ -1651,7 +1660,9 @@ function ReviewCommentEditor({
                 disabled={!canAskCodex}
                 onClick={handleAskCodex}
                 title={
-                  canAskCodex ? `Ask ${agentLabel}` : `Write a note before asking ${agentLabel}`
+                  canAskCodex
+                    ? `Ask ${agentLabel} (${getShortcutLabel(keymap, 'askAgent')})`
+                    : `Write a note before asking ${agentLabel}`
                 }
                 type="button"
               >
@@ -1671,7 +1682,9 @@ function ReviewCommentEditor({
                 disabled={!commentCanSubmit}
                 onClick={handleSubmitComment}
                 title={
-                  commentCanSubmit ? 'Submit review comment' : 'Write a note before commenting'
+                  commentCanSubmit
+                    ? `Submit review comment (${getShortcutLabel(keymap, 'submitComment')})`
+                    : 'Write a note before commenting'
                 }
                 type="button"
               >
