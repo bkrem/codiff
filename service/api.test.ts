@@ -1,5 +1,41 @@
 import { expect, test } from 'vite-plus/test';
-import { handleSharingApiRequest, type SharingEnv } from './api.ts';
+import { handleSharingApiRequest, readRequestText, type SharingEnv } from './api.ts';
+
+test('reads request bodies within a byte limit', async () => {
+  const request = new Request('https://codiff.dev/api/uploads', {
+    body: new Uint8Array([0x61, 0xe2, 0x82, 0xac]),
+    method: 'POST',
+  });
+
+  expect(await readRequestText(request, 4)).toBe('a€');
+});
+
+test('rejects request bodies that exceed declared or streamed byte limits', async () => {
+  const declared = new Request('https://codiff.dev/api/uploads', {
+    body: 'small',
+    headers: { 'content-length': '100' },
+    method: 'POST',
+  });
+  expect(await readRequestText(declared, 5)).toBeNull();
+
+  let cancelled = false;
+  const streamed = new Request('https://codiff.dev/api/uploads', {
+    body: new ReadableStream({
+      cancel() {
+        cancelled = true;
+        throw new Error('Cancellation failed.');
+      },
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.enqueue(new Uint8Array([4, 5, 6]));
+      },
+    }),
+    duplex: 'half',
+    method: 'POST',
+  } as RequestInit);
+  expect(await readRequestText(streamed, 5)).toBeNull();
+  expect(cancelled).toBe(true);
+});
 
 test('creates anonymous upload intents without touching persistent storage', async () => {
   let databaseAccesses = 0;

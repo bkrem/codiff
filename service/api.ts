@@ -185,6 +185,44 @@ const unauthorized = () => json({ error: 'authentication-required' }, { status: 
 const maxUploadByteSize = 25 * 1024 * 1024;
 const textEncoder = new TextEncoder();
 
+export const readRequestText = async (request: Request, maximumByteSize: number) => {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && Number(contentLength) > maximumByteSize) {
+    return null;
+  }
+
+  if (!request.body) {
+    return '';
+  }
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let byteSize = 0;
+  const chunks: Array<string> = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        chunks.push(decoder.decode());
+        return chunks.join('');
+      }
+
+      byteSize += value.byteLength;
+      if (byteSize > maximumByteSize) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Cancellation is best-effort; the size limit still determines the response.
+        }
+        return null;
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
 
@@ -517,8 +555,8 @@ const uploadShare = async (request: Request, env: SharingEnv, options: SharingAp
     return unauthorized();
   }
 
-  const body = await request.text();
-  if (textEncoder.encode(body).byteLength > maxUploadByteSize) {
+  const body = await readRequestText(request, maxUploadByteSize);
+  if (body === null) {
     return json({ error: 'manifest-too-large' }, { status: 413 });
   }
 
