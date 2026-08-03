@@ -89,9 +89,11 @@ export type { CodiffUpdateStatus as UpdateStatus } from '../../types.ts';
 
 export function UpdatePill({
   onApply,
+  onDismiss,
   status,
 }: {
   onApply: () => void;
+  onDismiss?: () => void;
   status: CodiffUpdateStatus;
 }) {
   const { currentVersion, message, phase, strategy, version } = status;
@@ -144,6 +146,17 @@ export function UpdatePill({
                 : 'Update failed. Try again'}
         </span>
       </Button>
+      {actionable && onDismiss ? (
+        <button
+          aria-label="Dismiss update"
+          className="update-pill-dismiss"
+          onClick={onDismiss}
+          title="Dismiss"
+          type="button"
+        >
+          <X aria-hidden size={13} weight="bold" />
+        </button>
+      ) : null}
     </div>
   );
 }

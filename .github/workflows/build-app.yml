@@ -23,13 +23,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate Release Version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          [[ "${TAG_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "${TAG_NAME}" = "v$(node -p "require('./package.json').version")"
+
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           gh release view "${TAG_NAME}" >/dev/null 2>&1 \
-            || gh release create "${TAG_NAME}" --generate-notes --title "${TAG_NAME}" --verify-tag
+            || gh release create "${TAG_NAME}" --draft --generate-notes --title "${TAG_NAME}" --verify-tag
 
   build-linux:
     needs: create-release
@@ -166,3 +173,15 @@ jobs:
           fi
 
           gh release upload "${TAG_NAME}" "${assets[@]}" --clobber
+
+  publish-release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh release edit "${TAG_NAME}" --draft=false --latest

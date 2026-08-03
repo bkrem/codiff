@@ -17,8 +17,13 @@ const runVersion = async (home: string) =>
 
 const writeState = async (
   home: string,
-  state: { dismissedVersion?: string; lastCheckedAt: string; latestVersion: string },
-) => writeStateContents(home, JSON.stringify(state, null, 2));
+  state: {
+    compatible?: boolean;
+    dismissedVersion?: string;
+    lastCheckedAt: string;
+    latestVersion: string;
+  },
+) => writeStateContents(home, JSON.stringify({ compatible: true, ...state }, null, 2));
 
 const writeStateContents = async (home: string, contents: string) => {
   await mkdir(join(home, '.codiff'), { recursive: true });
@@ -60,6 +65,17 @@ test('prints no notice for a dismissed version', async () => {
   await using home = await createTemporaryDirectory('codiff-app-home-');
   await writeState(home.path, {
     dismissedVersion: '99.0.0',
+    lastCheckedAt: '2026-07-29T00:00:00.000Z',
+    latestVersion: '99.0.0',
+  });
+
+  expect((await runVersion(home.path)).stderr).toBe('');
+});
+
+test('prints no notice for an incompatible release', async () => {
+  await using home = await createTemporaryDirectory('codiff-app-home-');
+  await writeState(home.path, {
+    compatible: false,
     lastCheckedAt: '2026-07-29T00:00:00.000Z',
     latestVersion: '99.0.0',
   });
@@ -172,7 +188,14 @@ test('resolves duplicate keys last-wins like JSON parsing does', async () => {
   await using home = await createTemporaryDirectory('codiff-app-home-');
   await writeStateContents(
     home.path,
-    '{\n  "lastCheckedAt": "2026-07-29T00:00:00.000Z",\n  "latestVersion": "99.0.0",\n  "latestVersion": "0.0.1"\n}',
+    '{\n  "compatible": true,\n  "lastCheckedAt": "2026-07-29T00:00:00.000Z",\n  "latestVersion": "99.0.0",\n  "latestVersion": "0.0.1"\n}',
+  );
+
+  expect((await runVersion(home.path)).stderr).toBe('');
+
+  await writeStateContents(
+    home.path,
+    '{\n  "compatible": true,\n  "compatible": false,\n  "lastCheckedAt": "2026-07-29T00:00:00.000Z",\n  "latestVersion": "99.0.0"\n}',
   );
 
   expect((await runVersion(home.path)).stderr).toBe('');

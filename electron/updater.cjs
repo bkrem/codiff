@@ -263,6 +263,12 @@ const createUpdater = ({
 
     try {
       const release = await fetchLatestRelease(releaseUrl);
+      const asset = pickReleaseAsset(release.assets, { arch, linuxFlavor, platform });
+      const compatible = Boolean(
+        asset &&
+        (strategy !== 'download' ||
+          (asset.digest?.startsWith('sha256:') && asset.digest.length > 'sha256:'.length)),
+      );
 
       // Re-read after the network round trip: a dismissal may have been
       // persisted while the request was in flight and must survive. A forced
@@ -272,6 +278,7 @@ const createUpdater = ({
       const dismissedVersion = force && dismissedNow === dismissedBefore ? undefined : dismissedNow;
       writeUpdateState(
         {
+          compatible,
           lastCheckedAt: new Date().toISOString(),
           latestVersion: release.version,
           ...(dismissedVersion ? { dismissedVersion } : {}),

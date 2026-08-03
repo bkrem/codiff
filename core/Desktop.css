@@ -81,6 +81,24 @@
   position: relative;
 }
 
+.update-pill-dismiss {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  padding: 4px;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.update-pill-dismiss:hover {
+  color: var(--text);
+}
+
 /* The pill is a regular .codiff-button; these rules only give it the accent
    fill, so the chained selectors must outrank the shared button defaults. */
 .update-pill.codiff-button {

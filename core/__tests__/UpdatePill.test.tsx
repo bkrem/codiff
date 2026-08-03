@@ -128,6 +128,23 @@ test('applies the update with a single click', async () => {
   expect(view.container.querySelector('.update-popover')).toBeNull();
 });
 
+test('dismisses an available update', async () => {
+  let dismissed = 0;
+  await using view = await renderPill(
+    <UpdatePill
+      onApply={noop}
+      onDismiss={() => dismissed++}
+      status={status({ phase: 'available', version: '1.9.3' })}
+    />,
+  );
+
+  const dismiss = view.container.querySelector<HTMLButtonElement>('.update-pill-dismiss');
+  await act(async () => dismiss?.click());
+
+  expect(dismiss?.getAttribute('aria-label')).toBe('Dismiss update');
+  expect(dismissed).toBe(1);
+});
+
 test('shows progress while updating and ignores clicks', async () => {
   let applied = 0;
   await using view = await renderPill(

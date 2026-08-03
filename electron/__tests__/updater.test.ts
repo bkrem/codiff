@@ -77,9 +77,25 @@ class FakeAutoUpdater extends EventEmitter {
   }
 }
 
-const releaseJson = (version: string, assets: ReadonlyArray<Record<string, string>> = []) =>
+const releaseJson = (version: string, assets?: ReadonlyArray<Record<string, string>>) =>
   JSON.stringify({
-    assets,
+    assets: assets ?? [
+      {
+        browser_download_url: `https://example.com/Codiff-darwin-arm64-${version}.zip`,
+        digest: sha256('mac-zip'),
+        name: `Codiff-darwin-arm64-${version}.zip`,
+      },
+      {
+        browser_download_url: `https://example.com/Codiff-win32-x64-${version}.zip`,
+        digest: sha256('windows-zip'),
+        name: `Codiff-win32-x64-${version}.zip`,
+      },
+      {
+        browser_download_url: `https://example.com/codiff_${version}_amd64.deb`,
+        digest: sha256('deb'),
+        name: `codiff_${version}_amd64.deb`,
+      },
+    ],
     tag_name: `v${version}`,
   });
 
@@ -92,8 +108,14 @@ const startReleaseServer = async (handler: Parameters<typeof createServer>[1]) =
 
 const writeState = async (
   configDir: string,
-  state: { dismissedVersion?: string; lastCheckedAt: string; latestVersion: string },
-) => writeFile(join(configDir, 'update-state.json'), JSON.stringify(state));
+  state: {
+    compatible?: boolean;
+    dismissedVersion?: string;
+    lastCheckedAt: string;
+    latestVersion: string;
+  },
+) =>
+  writeFile(join(configDir, 'update-state.json'), JSON.stringify({ compatible: true, ...state }));
 
 const recentCheck = () => new Date().toISOString();
 
@@ -444,6 +466,70 @@ test('checkForUpdates stays idle when already up to date', async () => {
     phase: 'idle',
     strategy: 'squirrel',
   });
+});
+
+test('checkForUpdates ignores a release without an installer for this platform', async () => {
+  await using directory = await createTemporaryDirectory('codiff-updater-');
+  const { disposable: _server, origin } = await startReleaseServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(
+      releaseJson('1.9.3', [
+        {
+          browser_download_url: 'https://example.com/Codiff-win32-x64-1.9.3.zip',
+          digest: sha256('windows-zip'),
+          name: 'Codiff-win32-x64-1.9.3.zip',
+        },
+      ]),
+    );
+  });
+
+  const updater = createUpdater({
+    arch: 'arm64',
+    configDir: directory.path,
+    currentVersion: '1.9.2',
+    isPackaged: true,
+    platform: 'darwin',
+    releaseUrl: `${origin}/`,
+    strategy: 'squirrel',
+  });
+
+  expect(await updater.checkForUpdates()).toEqual({
+    currentVersion: '1.9.2',
+    phase: 'idle',
+    strategy: 'squirrel',
+  });
+  const persisted = JSON.parse(
+    await readFile(join(directory.path, 'update-state.json'), 'utf8'),
+  ) as { compatible: boolean; latestVersion: string };
+  expect(persisted).toMatchObject({ compatible: false, latestVersion: '1.9.3' });
+});
+
+test('download checks require a published checksum', async () => {
+  await using directory = await createTemporaryDirectory('codiff-updater-');
+  const { disposable: _server, origin } = await startReleaseServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(
+      releaseJson('1.9.3', [
+        {
+          browser_download_url: 'https://example.com/codiff_1.9.3_amd64.deb',
+          name: 'codiff_1.9.3_amd64.deb',
+        },
+      ]),
+    );
+  });
+
+  const updater = createUpdater({
+    arch: 'x64',
+    configDir: directory.path,
+    currentVersion: '1.9.2',
+    isPackaged: true,
+    linuxFlavor: 'deb',
+    platform: 'linux',
+    releaseUrl: `${origin}/`,
+    strategy: 'download',
+  });
+
+  expect((await updater.checkForUpdates()).phase).toBe('idle');
 });
 
 test('checkForUpdates honors the throttle and force bypasses it', async () => {

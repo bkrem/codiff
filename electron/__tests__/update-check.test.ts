@@ -9,6 +9,7 @@ import {
 } from '../../core/__tests__/helpers/resources.ts';
 
 type UpdateState = {
+  compatible: boolean;
   dismissedVersion?: string;
   lastCheckedAt: string;
   latestVersion: string;
@@ -48,6 +49,7 @@ const {
 };
 
 const validState: UpdateState = {
+  compatible: true,
   lastCheckedAt: '2026-07-28T10:00:00.000Z',
   latestVersion: '1.9.3',
 };
@@ -103,6 +105,12 @@ test('readUpdateState returns null when fields are missing or invalid', async ()
   await writeFile(
     join(directory.path, 'update-state.json'),
     JSON.stringify({ lastCheckedAt: '2026-07-28T10:00:00.000Z' }),
+  );
+  expect(readUpdateState(directory.path)).toBeNull();
+
+  await writeFile(
+    join(directory.path, 'update-state.json'),
+    JSON.stringify({ ...validState, compatible: undefined }),
   );
   expect(readUpdateState(directory.path)).toBeNull();
 
@@ -165,6 +173,7 @@ test('getAvailableUpdate returns null without state or without a newer version',
 
 test('getAvailableUpdate returns null when the latest version was dismissed', () => {
   expect(getAvailableUpdate({ ...validState, dismissedVersion: '1.9.3' }, '1.9.2')).toBeNull();
+  expect(getAvailableUpdate({ ...validState, compatible: false }, '1.9.2')).toBeNull();
 });
 
 test('getAvailableUpdate resurfaces after a dismissed version is superseded', () => {

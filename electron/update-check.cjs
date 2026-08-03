@@ -12,6 +12,7 @@ const getDefaultConfigDir = () => join(homedir(), '.codiff');
 
 /**
  * @typedef {{
+ *   compatible: boolean;
  *   lastCheckedAt: string;
  *   latestVersion: string;
  *   dismissedVersion?: string;
@@ -68,10 +69,11 @@ const parseUpdateState = (raw) => {
     return null;
   }
 
-  const { dismissedVersion, lastCheckedAt, latestVersion } =
+  const { compatible, dismissedVersion, lastCheckedAt, latestVersion } =
     /** @type {Record<string, unknown>} */ (raw);
 
   if (
+    typeof compatible !== 'boolean' ||
     typeof lastCheckedAt !== 'string' ||
     Number.isNaN(Date.parse(lastCheckedAt)) ||
     typeof latestVersion !== 'string'
@@ -80,6 +82,7 @@ const parseUpdateState = (raw) => {
   }
 
   return {
+    compatible,
     lastCheckedAt,
     latestVersion,
     ...(typeof dismissedVersion === 'string' ? { dismissedVersion } : {}),
@@ -139,6 +142,7 @@ const shouldCheckForUpdates = (state, now) => {
 const getAvailableUpdate = (state, currentVersion) => {
   if (
     !state ||
+    !state.compatible ||
     state.latestVersion === state.dismissedVersion ||
     !isNewerVersion(state.latestVersion, currentVersion)
   ) {

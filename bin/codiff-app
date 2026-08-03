@@ -166,9 +166,11 @@ print_update_notice() {
   [ -f "$state_file" ] && [ -r "$state_file" ] || return 0
   # tail -n 1 mirrors JSON duplicate-key last-wins resolution.
   checked_at="$(sed -n 's/.*"lastCheckedAt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" 2>/dev/null | tail -n 1)"
+  compatible="$(sed -n 's/.*"compatible"[[:space:]]*:[[:space:]]*\([[:alpha:]][[:alpha:]]*\).*/\1/p' "$state_file" 2>/dev/null | tail -n 1)"
   latest="$(sed -n 's/.*"latestVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" 2>/dev/null | tail -n 1)"
   dismissed="$(sed -n 's/.*"dismissedVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" 2>/dev/null | tail -n 1)"
   is_iso_timestamp "$checked_at" || return 0
+  [ "$compatible" = "true" ] || return 0
   [ -n "$latest" ] || return 0
   [ "$latest" = "$dismissed" ] && return 0
   current="$(codiff_version)"

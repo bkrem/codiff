@@ -6,8 +6,25 @@ import { createTemporaryDirectory } from './helpers/resources.ts';
 
 const writeState = async (
   configDir: string,
-  state: { dismissedVersion?: string; lastCheckedAt: string; latestVersion: string },
-) => writeFile(join(configDir, 'update-state.json'), JSON.stringify(state));
+  state: {
+    compatible?: boolean;
+    dismissedVersion?: string;
+    lastCheckedAt: string;
+    latestVersion: string;
+  },
+) =>
+  writeFile(join(configDir, 'update-state.json'), JSON.stringify({ compatible: true, ...state }));
+
+test('returns null when the cached release is incompatible', async () => {
+  await using directory = await createTemporaryDirectory('codiff-notice-');
+  await writeState(directory.path, {
+    compatible: false,
+    lastCheckedAt: '2026-07-28T10:00:00.000Z',
+    latestVersion: '1.9.3',
+  });
+
+  expect(getUpdateNotice({ configDir: directory.path, currentVersion: '1.9.2' })).toBeNull();
+});
 
 const disableUpdateChecks = (configDir: string) =>
   writeFile(
