@@ -25,6 +25,14 @@ const writeStateContents = async (home: string, contents: string) => {
   await writeFile(join(home, '.codiff', 'update-state.json'), contents);
 };
 
+const disableUpdateChecks = async (home: string) => {
+  await mkdir(join(home, '.codiff'), { recursive: true });
+  await writeFile(
+    join(home, '.codiff', 'codiff.jsonc'),
+    JSON.stringify({ settings: { checkForUpdates: false } }),
+  );
+};
+
 test('prints no notice without cached update state', async () => {
   await using home = await createTemporaryDirectory('codiff-app-home-');
 
@@ -55,6 +63,17 @@ test('prints no notice for a dismissed version', async () => {
     lastCheckedAt: '2026-07-29T00:00:00.000Z',
     latestVersion: '99.0.0',
   });
+
+  expect((await runVersion(home.path)).stderr).toBe('');
+});
+
+test('prints no notice when update notifications are disabled', async () => {
+  await using home = await createTemporaryDirectory('codiff-app-home-');
+  await writeState(home.path, {
+    lastCheckedAt: '2026-07-29T00:00:00.000Z',
+    latestVersion: '99.0.0',
+  });
+  await disableUpdateChecks(home.path);
 
   expect((await runVersion(home.path)).stderr).toBe('');
 });

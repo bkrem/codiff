@@ -25,6 +25,7 @@ type Updater = {
   checkForUpdates: (options?: { force?: boolean }) => Promise<UpdateStatus>;
   dismissUpdate: () => UpdateStatus;
   getStatus: () => UpdateStatus;
+  setUpdatesEnabled: (enabled: boolean) => UpdateStatus;
 };
 
 type ReleaseAsset = { digest?: string; name: string; url: string };
@@ -295,6 +296,38 @@ test('a cached update stays hidden when update checks are disabled', async () =>
     phase: 'idle',
     strategy: 'squirrel',
   });
+});
+
+test('changing the update setting immediately hides and restores a cached update', async () => {
+  await using directory = await createTemporaryDirectory('codiff-updater-');
+  await writeState(directory.path, {
+    lastCheckedAt: recentCheck(),
+    latestVersion: '1.9.3',
+  });
+
+  const statuses: Array<UpdateStatus> = [];
+  const updater = createUpdater({
+    arch: 'arm64',
+    configDir: directory.path,
+    currentVersion: '1.9.2',
+    isPackaged: true,
+    onStatusChange: (status) => statuses.push(status),
+    platform: 'darwin',
+    strategy: 'squirrel',
+  });
+
+  expect(updater.setUpdatesEnabled(false)).toEqual({
+    currentVersion: '1.9.2',
+    phase: 'idle',
+    strategy: 'squirrel',
+  });
+  expect(updater.setUpdatesEnabled(true)).toEqual({
+    currentVersion: '1.9.2',
+    phase: 'available',
+    strategy: 'squirrel',
+    version: '1.9.3',
+  });
+  expect(statuses.map(({ phase }) => phase)).toEqual(['idle', 'available']);
 });
 
 test('an explicit check still reports updates when automatic checks are disabled', async () => {

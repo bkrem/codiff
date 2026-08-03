@@ -190,7 +190,10 @@ const createUpdater = ({
   // an update remembered from before it was turned off. Checks the user asks
   // for explicitly still report; only the cache stays silent.
   /** @type {UpdateStatus} */
-  let status = updatesEnabled ? statusFromState() : { currentVersion, phase: 'idle', strategy };
+  let updateNotificationsEnabled = updatesEnabled;
+  let status = updateNotificationsEnabled
+    ? statusFromState()
+    : { currentVersion, phase: 'idle', strategy };
 
   // Counts user and auto-updater actions (apply attempts, their outcomes,
   // dismissals). Checks snapshot it when they are requested and refuse to
@@ -543,12 +546,29 @@ const createUpdater = ({
     return { ...setStatus(statusFromState()) };
   };
 
+  const setUpdatesEnabled = (enabled) => {
+    if (enabled === updateNotificationsEnabled) {
+      return { ...status };
+    }
+
+    updateNotificationsEnabled = enabled;
+    // A config change is newer than an in-flight automatic check. Keep active
+    // installs intact, but immediately hide or restore passive notifications.
+    actionGeneration++;
+    return status.phase === 'updating' || status.phase === 'installerReady'
+      ? { ...status }
+      : {
+          ...setStatus(enabled ? statusFromState() : { currentVersion, phase: 'idle', strategy }),
+        };
+  };
+
   return {
     applyLatest,
     applyUpdate,
     checkForUpdates,
     dismissUpdate,
     getStatus: () => ({ ...status }),
+    setUpdatesEnabled,
   };
 };
 

@@ -9,6 +9,12 @@ const writeState = async (
   state: { dismissedVersion?: string; lastCheckedAt: string; latestVersion: string },
 ) => writeFile(join(configDir, 'update-state.json'), JSON.stringify(state));
 
+const disableUpdateChecks = (configDir: string) =>
+  writeFile(
+    join(configDir, 'codiff.jsonc'),
+    JSON.stringify({ settings: { checkForUpdates: false } }),
+  );
+
 test('returns null without cached update state', async () => {
   await using directory = await createTemporaryDirectory('codiff-notice-');
   expect(getUpdateNotice({ configDir: directory.path, currentVersion: '1.9.2' })).toBeNull();
@@ -46,6 +52,17 @@ test('returns null for a dismissed version', async () => {
     lastCheckedAt: '2026-07-28T10:00:00.000Z',
     latestVersion: '1.9.3',
   });
+
+  expect(getUpdateNotice({ configDir: directory.path, currentVersion: '1.9.2' })).toBeNull();
+});
+
+test('returns null when update notifications are disabled', async () => {
+  await using directory = await createTemporaryDirectory('codiff-notice-');
+  await writeState(directory.path, {
+    lastCheckedAt: '2026-07-28T10:00:00.000Z',
+    latestVersion: '1.9.3',
+  });
+  await disableUpdateChecks(directory.path);
 
   expect(getUpdateNotice({ configDir: directory.path, currentVersion: '1.9.2' })).toBeNull();
 });

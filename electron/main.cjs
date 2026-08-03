@@ -1356,6 +1356,7 @@ if (squirrelStartup || !lock) {
           piModel: normalizePiModel(nextConfig.settings.piModel),
         },
       };
+      updater?.setUpdatesEnabled(config.settings.checkForUpdates);
       refreshInstalledAgentFiles();
       nativeTheme.themeSource = config.settings.theme;
       sendConfigChanged();

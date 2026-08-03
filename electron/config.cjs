@@ -35,7 +35,8 @@ const createDefaultConfig = () => ({
 
 const getConfigDir = () => join(homedir(), '.codiff');
 
-const getConfigPath = () => join(getConfigDir(), 'codiff.jsonc');
+/** @param {string} [configDir] */
+const getConfigPath = (configDir) => join(configDir ?? getConfigDir(), 'codiff.jsonc');
 
 /**
  * Strip JSONC comments (line comments and block comments) to produce valid JSON.
@@ -290,10 +291,11 @@ const mergeConfig = (raw) => {
 
 /**
  * Read and parse the config file. Returns defaults if the file does not exist or is invalid.
+ * @param {string} [configDir]
  * @returns {CodiffConfig}
  */
-const readConfig = () => {
-  const configPath = getConfigPath();
+const readConfig = (configDir) => {
+  const configPath = getConfigPath(configDir);
 
   if (!existsSync(configPath)) {
     return createDefaultConfig();
