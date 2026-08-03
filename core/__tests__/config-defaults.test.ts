@@ -24,6 +24,15 @@ const readElectronConfig = (raw: unknown) => {
   return readConfig();
 };
 
+const readElectronConfigText = (text: string) => {
+  using home = createTemporaryDirectorySync('codiff-config-home.');
+  using _environment = createTemporaryEnvironment({ HOME: home.path });
+  const configDirectory = join(home.path, '.codiff');
+  mkdirSync(configDirectory);
+  writeFileSync(join(configDirectory, 'codiff.jsonc'), text);
+  return readConfig();
+};
+
 const getSchemaDefaults = (section: 'keymap' | 'settings') =>
   Object.fromEntries(
     Object.entries(schema.properties[section].properties).map(([key, property]) => [
@@ -85,6 +94,25 @@ test('electron config keeps custom walkthrough prompt text only when it is a str
       },
     }).settings.walkthroughPrompt,
   ).toBe('');
+});
+
+test('electron config strips trailing commas without changing strings', () => {
+  const config = readElectronConfigText(`{
+    // JSONC comments and trailing commas remain supported.
+    "settings": {
+      "walkthroughPrompt": "Preserve comma,} and comma,] with an escaped quote: \\"",
+      "wordWrap": false,
+    },
+    "keymap": {
+      "nextHunk": ["j", "n",],
+    },
+  }`);
+
+  expect(config.settings.walkthroughPrompt).toBe(
+    'Preserve comma,} and comma,] with an escaped quote: "',
+  );
+  expect(config.settings.wordWrap).toBe(false);
+  expect(config.keymap.nextHunk).toEqual(['j', 'n']);
 });
 
 test('electron defaults load from packaged app shape', () => {

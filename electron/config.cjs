@@ -100,7 +100,43 @@ const stripJsoncComments = (text) => {
  * @param {string} text
  * @returns {string}
  */
-const stripTrailingCommas = (text) => text.replace(/,\s*([\]}])/g, '$1');
+const stripTrailingCommas = (text) => {
+  let result = '';
+  let inString = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+    if (inString) {
+      result += character;
+      if (character === '\\') {
+        result += text[++index] ?? '';
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+
+    if (character === ',') {
+      let next = index + 1;
+      while (/\s/.test(text[next] ?? '')) {
+        next++;
+      }
+      if (text[next] === ']' || text[next] === '}') {
+        continue;
+      }
+    }
+
+    result += character;
+  }
+
+  return result;
+};
 
 /**
  * Parse a JSONC string into a JavaScript object.
