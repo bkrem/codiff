@@ -18,6 +18,7 @@ import {
   RepositoryChangeBanner,
   RepositoryLoadErrorPanel,
   ReviewSourceLoading,
+  UpdatePill,
   WalkthroughOutdatedBanner,
 } from './app/components/Panels.tsx';
 import { PlanEditorView } from './app/components/PlanEditorView.tsx';
@@ -111,6 +112,7 @@ import type {
   CodiffLaunchOptions,
   CodiffMarkdownDocument,
   CodiffPreferences,
+  CodiffUpdateStatus,
   GitIdentity,
   HistoryEntry,
   OpenReviewSourceKind,
@@ -181,6 +183,7 @@ export default function App() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySource, setHistorySource] = useState<ReviewSource | null>(null);
   const [localChangesDetected, setLocalChangesDetected] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<CodiffUpdateStatus | null>(null);
   const [launchOptions, setLaunchOptions] = useState<CodiffLaunchOptions>(defaultLaunchOptions);
   const [codiffConfig, setCodiffConfig] = useState<CodiffConfig>(createDefaultConfig);
   const [agentSkillInstalling, setAgentSkillInstalling] = useState(false);
@@ -813,6 +816,25 @@ export default function App() {
       }),
     [],
   );
+
+  useEffect(() => {
+    let canceled = false;
+
+    window.codiff
+      .getUpdateStatus()
+      .then((status) => {
+        if (!canceled) {
+          setUpdateStatus(status);
+        }
+      })
+      .catch(() => {});
+
+    const unsubscribe = window.codiff.onUpdateStatusChanged(setUpdateStatus);
+    return () => {
+      canceled = true;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     let canceled = false;
@@ -1921,6 +1943,14 @@ export default function App() {
           walkthroughLoading={walkthroughLoading}
           walkthroughProgress={walkthroughProgress}
         />
+        {updateStatus ? (
+          <UpdatePill
+            onApply={() => {
+              window.codiff.applyUpdate().then(setUpdateStatus, () => {});
+            }}
+            status={updateStatus}
+          />
+        ) : null}
       </aside>
       <div aria-hidden className="sidebar-resizer" onPointerDown={resizeSidebar} />
       <main className="review">

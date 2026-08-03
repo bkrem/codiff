@@ -417,6 +417,7 @@ export type WalkthroughContext = {
 
 export type CodiffLaunchOptions = {
   agentBackend?: 'codex' | 'claude' | 'opencode' | 'pi';
+  applyUpdate?: boolean;
   claudeSessionId?: string;
   codexSessionId?: string;
   opencodeSessionId?: string;
@@ -761,6 +762,16 @@ export type ReviewPreferences = Pick<
   CodiffPreferences,
   'codeFontFamily' | 'codeFontSize' | 'diffStyle' | 'showWhitespace' | 'theme' | 'wordWrap'
 >;
+
+export type CodiffUpdatePhase = 'available' | 'error' | 'idle' | 'installerReady' | 'updating';
+
+export type CodiffUpdateStatus = {
+  currentVersion: string;
+  message?: string;
+  phase: CodiffUpdatePhase;
+  strategy?: 'download' | 'manual' | 'squirrel';
+  version?: string;
+};
 
 export type PullRequestReviewComment = {
   anchor?: 'file' | 'line';
