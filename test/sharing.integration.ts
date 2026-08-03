@@ -579,6 +579,30 @@ test('stores immutable plan and walkthrough shares through D1, R2, Fate, and pol
   }
 });
 
+test('accepts only one concurrent upload for an intent', async () => {
+  const cookie = await signInWithGitHub(ada);
+  const { value: intent } = await createIntent(cookie);
+
+  const responses = await Promise.all([
+    uploadShare(intent, planSnapshot),
+    uploadShare(intent, planSnapshot),
+  ]);
+  expect(responses.map((response: Response) => response.status).sort()).toEqual([200, 401]);
+
+  const successful = responses.find((response: Response) => response.status === 200);
+  if (!successful) {
+    throw new Error('Expected one upload to succeed.');
+  }
+  const upload = await readJson<{ slug: string }>(successful);
+  expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM Plan').first()).toEqual({ count: 1 });
+  expect(
+    await env.DB.prepare('SELECT status, walkthroughSlug FROM UploadIntent WHERE code = ?')
+      .bind(intent.code)
+      .first(),
+  ).toEqual({ status: 'uploaded', walkthroughSlug: upload.slug });
+  expect((await env.WALKTHROUGH_BUCKET.list()).objects).toHaveLength(1);
+});
+
 test('enforces per-kind and combined daily quotas and rolls R2 back on a D1 quota race', async () => {
   const cookie = await signInWithGitHub(ada);
   const owner = await env.DB.prepare('SELECT id FROM user WHERE email = ?')

@@ -1,6 +1,6 @@
 import { parsePlanShareUpload } from '@nkzw/codiff-core/share';
 import { z } from 'zod';
-import { db, eq, sql, withDatabase, type D1Binding } from './db.ts';
+import { and, db, eq, sql, withDatabase, type D1Binding } from './db.ts';
 import { plan, shareDailyUsage, uploadIntent, user, walkthrough, type UserRow } from './schema.ts';
 import {
   createUploadIntentSecret,
@@ -547,11 +547,20 @@ const uploadShare = async (request: Request, env: SharingEnv, options: SharingAp
   }
   const now = new Date();
 
-  await env.WALKTHROUGH_BUCKET.put(objectKey, canonical, {
-    httpMetadata: { contentType: 'application/json; charset=utf-8' },
-  });
+  const [ownedIntent] = await db
+    .update(uploadIntent)
+    .set({ status: 'uploading', updatedAt: now })
+    .where(and(eq(uploadIntent.id, intent.id), eq(uploadIntent.status, 'claimed')))
+    .returning({ id: uploadIntent.id });
+  if (!ownedIntent) {
+    return unauthorized();
+  }
 
   try {
+    await env.WALKTHROUGH_BUCKET.put(objectKey, canonical, {
+      httpMetadata: { contentType: 'application/json; charset=utf-8' },
+    });
+
     if (upload.kind === 'walkthrough') {
       const source = upload.snapshot.repository.source;
       const repository = getRepositoryMetadata(source);
@@ -591,7 +600,7 @@ const uploadShare = async (request: Request, env: SharingEnv, options: SharingAp
             updatedAt: now,
             walkthroughSlug: slug,
           })
-          .where(eq(uploadIntent.id, intent.id)),
+          .where(and(eq(uploadIntent.id, intent.id), eq(uploadIntent.status, 'uploading'))),
       ]);
     } else {
       await db.batch([
@@ -619,11 +628,18 @@ const uploadShare = async (request: Request, env: SharingEnv, options: SharingAp
             updatedAt: now,
             walkthroughSlug: slug,
           })
-          .where(eq(uploadIntent.id, intent.id)),
+          .where(and(eq(uploadIntent.id, intent.id), eq(uploadIntent.status, 'uploading'))),
       ]);
     }
   } catch (error) {
-    await env.WALKTHROUGH_BUCKET.delete(objectKey);
+    try {
+      await env.WALKTHROUGH_BUCKET.delete(objectKey);
+    } finally {
+      await db
+        .update(uploadIntent)
+        .set({ status: 'claimed', updatedAt: new Date() })
+        .where(and(eq(uploadIntent.id, intent.id), eq(uploadIntent.status, 'uploading')));
+    }
     if (isQuotaError(error)) {
       return quotaResponse();
     }

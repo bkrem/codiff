@@ -141,7 +141,7 @@ export const uploadIntent = sqliteTable(
     secretHash: text().notNull(),
     sharedByUserId: text().references(() => user.id, { onDelete: 'set null' }),
     shareKind: text({ enum: shareKind }).notNull().default('walkthrough'),
-    status: text({ enum: ['pending', 'claimed', 'uploaded'] })
+    status: text({ enum: ['pending', 'claimed', 'uploading', 'uploaded'] })
       .notNull()
       .default('pending'),
     updatedAt: timestampColumn(),
