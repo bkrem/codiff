@@ -645,7 +645,16 @@ const getPatch = async (repoRoot, item, kind, options = {}) => {
           item.path,
         ]
       : kind === 'staged'
-        ? ['diff', '--cached', '--patch', '--no-ext-diff', ...whitespaceArgs, '--', item.path]
+        ? [
+            'diff',
+            '--cached',
+            '--patch',
+            '--no-ext-diff',
+            ...whitespaceArgs,
+            '--',
+            ...(item.oldPath ? [item.oldPath] : []),
+            item.path,
+          ]
         : ['diff', '--patch', '--no-ext-diff', ...whitespaceArgs, '--', item.path];
   const rawPatch = await git(repoRoot, args);
   const diffStart = item.status === 'conflicted' ? rawPatch.indexOf('diff --git ') : -1;
@@ -742,12 +751,7 @@ const getWorkingTreeContents = async (repoRoot, item, kind, options = {}) => {
     };
   }
 
-  const oldFile = await readIndexFile(
-    repoRoot,
-    item.oldPath || item.path,
-    options,
-    item.conflictStage,
-  );
+  const oldFile = await readIndexFile(repoRoot, item.path, options, item.conflictStage);
   const newFile = await readWorkingTreeFile(repoRoot, item.path, options);
   const summary = summarizeContent(oldFile, newFile);
 

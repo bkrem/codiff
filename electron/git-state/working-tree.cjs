@@ -350,7 +350,9 @@ const readDiffImageContent = async (launchPath, request) => {
             readIndexImageFile(repoRoot, item.path),
           ])
         : await Promise.all([
-            item.untracked ? undefined : readIndexImageFile(repoRoot, oldPath, item.conflictStage),
+            item.untracked
+              ? undefined
+              : readIndexImageFile(repoRoot, item.path, item.conflictStage),
             readWorkingTreeImageFile(repoRoot, item.path),
           ]);
 

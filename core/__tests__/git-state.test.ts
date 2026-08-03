@@ -1447,6 +1447,39 @@ test('readWorkingTreeState reports staged pure renames with old and new paths', 
     expect(state.files[0].sections[0].oldFile?.contents).toBe('same contents\n');
     expect(state.files[0].sections[0].newFile?.name).toBe('new.txt');
     expect(state.files[0].sections[0].newFile?.contents).toBe('same contents\n');
+    expect(state.files[0].sections[0].patch).toContain('rename from old.txt');
+    expect(state.files[0].sections[0].patch).toContain('rename to new.txt');
+  });
+});
+
+test('readWorkingTreeState keeps rename metadata and the renamed index baseline', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'old.txt', 'one\ntwo\n');
+    await commitAll(repo, 'initial commit');
+    await git(repo, ['mv', 'old.txt', 'new.txt']);
+    await writeRepoFile(repo, 'new.txt', 'one\nchanged\n');
+
+    const state = await readWorkingTreeState(repo);
+    const [staged, unstaged] = state.files[0].sections;
+
+    expect(state.files[0]).toMatchObject({
+      oldPath: 'old.txt',
+      path: 'new.txt',
+      status: 'renamed',
+    });
+    expect(staged.kind).toBe('staged');
+    expect(staged.patch).toContain('rename from old.txt');
+    expect(staged.patch).toContain('rename to new.txt');
+    expect(staged.patch).not.toContain('+changed');
+    expect(unstaged.kind).toBe('unstaged');
+    expect(unstaged.oldFile).toMatchObject({ contents: 'one\ntwo\n', name: 'new.txt' });
+    expect(unstaged.newFile).toMatchObject({ contents: 'one\nchanged\n', name: 'new.txt' });
+    expect(unstaged.patch).toContain('-two');
+    expect(unstaged.patch).toContain('+changed');
+
+    const patchOnlyState = await readWorkingTreeState(repo, { eagerContents: false });
+    expect(patchOnlyState.files[0].sections[0].patch).toContain('rename from old.txt');
+    expect(patchOnlyState.files[0].sections[1].patch).toContain('+changed');
   });
 });
 
