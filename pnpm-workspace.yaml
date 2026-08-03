@@ -34,6 +34,8 @@ overrides:
   extract-zip>yauzl: ^3.4.0
   vite: 'catalog:'
   vitest: 'catalog:'
+patchedDependencies:
+  native-keymap@3.3.9: patches/native-keymap@3.3.9.patch
 peerDependencyRules:
   allowAny:
     - vite

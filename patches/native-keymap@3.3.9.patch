@@ -1,0 +1,13 @@
+diff --git a/src/keymapping.cc b/src/keymapping.cc
+index 002668d..ab04ac8 100644
+--- a/src/keymapping.cc
++++ b/src/keymapping.cc
+@@ -5,7 +5,7 @@
+  *--------------------------------------------------------------------------------------------*/
+ 
+ #define NODE_API_EXPERIMENTAL_NOGC_ENV_OPT_OUT
+-#include <node.h>
++#include <node_api.h>
+ #include <map>
+ 
+ #include "keymapping.h"

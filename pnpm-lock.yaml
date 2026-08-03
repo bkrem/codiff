@@ -15,6 +15,9 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@^0.2.6
   vitest: 4.1.10
 
+patchedDependencies:
+  native-keymap@3.3.9: 385affd59fcaeb63b0596da3fca88c73b24116b7571e2ac0a4b8fe20500373b3
+
 importers:
 
   .:
@@ -24,7 +27,7 @@ importers:
         version: 1.0.1
       native-keymap:
         specifier: ^3.3.9
-        version: 3.3.9
+        version: 3.3.9(patch_hash=385affd59fcaeb63b0596da3fca88c73b24116b7571e2ac0a4b8fe20500373b3)
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -11975,7 +11978,7 @@ snapshots:
 
   napi-build-utils@2.0.0: {}
 
-  native-keymap@3.3.9: {}
+  native-keymap@3.3.9(patch_hash=385affd59fcaeb63b0596da3fca88c73b24116b7571e2ac0a4b8fe20500373b3): {}
 
   natural-compare@1.4.0: {}
 

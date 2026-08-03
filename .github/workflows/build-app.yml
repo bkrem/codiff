@@ -102,7 +102,7 @@ jobs:
 
   build-windows:
     needs: create-release
-    runs-on: ubuntu-22.04
+    runs-on: windows-2022
     timeout-minutes: 60
     env:
       CODIFF_SKIP_SQUIRREL: '1'
@@ -120,13 +120,6 @@ jobs:
         id: pnpm-install
         with:
           run_install: false
-
-      # native-keymap compiles from source during install, and on a Linux host
-      # that requires the X11 headers even when packaging for another platform.
-      - name: Install native-keymap dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes libx11-dev libxkbfile-dev
 
       - name: Cache Electron Downloads
         uses: actions/cache@v4
