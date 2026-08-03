@@ -24,6 +24,7 @@ const execFileAsync = promisify(execFile);
  * @typedef {{reason: string; canLoad?: boolean; fileCount?: number; fingerprint?: string; limit?: number; loadState?: DiffSection['loadState']; size?: number}} DiffSummary
  * @typedef {{binary: boolean; file?: TextFile; fingerprint?: string; loadState?: DiffSection['loadState']; summary?: DiffSummary}} FileContentResult
  * @typedef {{
+ *   conflictStage?: 1 | 2 | 3;
  *   directory?: boolean;
  *   oldPath?: string;
  *   path: string;
@@ -207,6 +208,16 @@ const parseStatus = (raw) => {
       current.status = 'untracked';
       current.unstaged = true;
       current.untracked = true;
+    } else if (['AA', 'AU', 'DD', 'DU', 'UA', 'UD', 'UU'].includes(`${x}${y}`)) {
+      const conflictCode = `${x}${y}`;
+      if (conflictCode === 'DD') {
+        current.conflictStage = 1;
+      } else if (conflictCode !== 'DU' && conflictCode !== 'UA') {
+        current.conflictStage = 2;
+      }
+      current.staged = false;
+      current.status = 'conflicted';
+      current.unstaged = true;
     } else {
       current.staged = x !== ' ';
       current.unstaged = y !== ' ';
@@ -378,8 +389,9 @@ const readImageSpec = async (repoRoot, spec, path) => {
 /** @param {string} repoRoot @param {string} ref @param {string} path */
 const readGitImageFile = (repoRoot, ref, path) => readImageSpec(repoRoot, `${ref}:${path}`, path);
 
-/** @param {string} repoRoot @param {string} path */
-const readIndexImageFile = (repoRoot, path) => readImageSpec(repoRoot, `:${path}`, path);
+/** @param {string} repoRoot @param {string} path @param {1 | 2 | 3} [stage] */
+const readIndexImageFile = (repoRoot, path, stage) =>
+  readImageSpec(repoRoot, stage ? `:${stage}:${path}` : `:${path}`, path);
 
 /** @param {string} repoRoot @param {string} path */
 const readWorkingTreeImageFile = async (repoRoot, path) => {
@@ -448,11 +460,12 @@ const readGitFile = async (repoRoot, ref, path, options = {}) => {
  * @param {string} repoRoot
  * @param {string} path
  * @param {ReadFileOptions} [options]
+ * @param {1 | 2 | 3} [stage]
  * @returns {Promise<FileContentResult>}
  */
-const readIndexFile = async (repoRoot, path, options = {}) => {
+const readIndexFile = async (repoRoot, path, options = {}, stage) => {
   const limit = options.force ? MANUAL_TEXT_FILE_LIMIT : EAGER_TEXT_FILE_LIMIT;
-  const spec = `:${path}`;
+  const spec = stage ? `:${stage}:${path}` : `:${path}`;
 
   try {
     const size = await getBlobSize(repoRoot, spec);
@@ -610,14 +623,34 @@ const createPatchForNewFile = (path, contents) => {
 const getWhitespaceDiffArgs = (options = {}) =>
   options.showWhitespace === false ? ['--ignore-all-space'] : [];
 
-/** @param {string} repoRoot @param {string} path @param {WorkingTreeSectionKind} kind @param {{showWhitespace?: boolean}} [options] */
-const getPatch = async (repoRoot, path, kind, options = {}) => {
+/** @param {string} repoRoot @param {StatusItem} item @param {WorkingTreeSectionKind} kind @param {{showWhitespace?: boolean}} [options] */
+const getPatch = async (repoRoot, item, kind, options = {}) => {
   const whitespaceArgs = getWhitespaceDiffArgs(options);
+  if (item.status === 'conflicted' && !item.conflictStage) {
+    const newFile = await readWorkingTreeFile(repoRoot, item.path, options);
+    return {
+      binary: newFile.binary,
+      patch: newFile.file ? createPatchForNewFile(item.path, newFile.file.contents) : '',
+    };
+  }
   const args =
-    kind === 'staged'
-      ? ['diff', '--cached', '--patch', '--no-ext-diff', ...whitespaceArgs, '--', path]
-      : ['diff', '--patch', '--no-ext-diff', ...whitespaceArgs, '--', path];
-  const patch = await git(repoRoot, args);
+    item.status === 'conflicted'
+      ? [
+          'diff',
+          item.conflictStage === 1 ? '--base' : item.conflictStage === 3 ? '--theirs' : '--ours',
+          '--patch',
+          '--no-ext-diff',
+          ...whitespaceArgs,
+          '--',
+          item.path,
+        ]
+      : kind === 'staged'
+        ? ['diff', '--cached', '--patch', '--no-ext-diff', ...whitespaceArgs, '--', item.path]
+        : ['diff', '--patch', '--no-ext-diff', ...whitespaceArgs, '--', item.path];
+  const rawPatch = await git(repoRoot, args);
+  const diffStart = item.status === 'conflicted' ? rawPatch.indexOf('diff --git ') : -1;
+  const patch =
+    item.status !== 'conflicted' ? rawPatch : diffStart === -1 ? '' : rawPatch.slice(diffStart);
 
   return {
     binary: /Binary files .* differ/.test(patch),
@@ -709,7 +742,12 @@ const getWorkingTreeContents = async (repoRoot, item, kind, options = {}) => {
     };
   }
 
-  const oldFile = await readIndexFile(repoRoot, item.oldPath || item.path, options);
+  const oldFile = await readIndexFile(
+    repoRoot,
+    item.oldPath || item.path,
+    options,
+    item.conflictStage,
+  );
   const newFile = await readWorkingTreeFile(repoRoot, item.path, options);
   const summary = summarizeContent(oldFile, newFile);
 
@@ -729,9 +767,10 @@ const getWorkingTreeContents = async (repoRoot, item, kind, options = {}) => {
  */
 const createSection = async (repoRoot, item, kind, options = {}) => {
   const id = `${item.path}:${kind}`;
+  const needsWorkingTreeBaseline = item.status === 'conflicted' && !item.conflictStage;
 
-  if (options.patchOnly && !item.untracked) {
-    const patch = options.patch ?? (await getPatch(repoRoot, item.path, kind, options));
+  if (options.patchOnly && !item.untracked && !needsWorkingTreeBaseline) {
+    const patch = options.patch ?? (await getPatch(repoRoot, item, kind, options));
 
     if (patch.binary) {
       return {
@@ -780,7 +819,7 @@ const createSection = async (repoRoot, item, kind, options = {}) => {
     };
   }
 
-  const patch = await getPatch(repoRoot, item.path, kind, options);
+  const patch = await getPatch(repoRoot, item, kind, options);
 
   return {
     binary: patch.binary || contents.binary,

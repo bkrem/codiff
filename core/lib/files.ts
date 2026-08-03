@@ -5,6 +5,7 @@ export const statusForTree: Record<
   'added' | 'deleted' | 'modified' | 'renamed' | 'untracked'
 > = {
   added: 'added',
+  conflicted: 'modified',
   deleted: 'deleted',
   modified: 'modified',
   renamed: 'renamed',

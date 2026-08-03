@@ -79,6 +79,7 @@ const isReviewSource = (value: unknown): value is ReviewSource => {
 
 const isGitFileStatus = (value: unknown): value is GitFileStatus =>
   value === 'added' ||
+  value === 'conflicted' ||
   value === 'deleted' ||
   value === 'modified' ||
   value === 'renamed' ||

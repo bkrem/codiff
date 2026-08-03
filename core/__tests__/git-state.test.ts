@@ -16,6 +16,7 @@ import { getGitTestEnvironmentForSubprocess, withGitTestEnvironment } from './he
 import { createTemporaryDirectory, createTemporaryEnvironment } from './helpers/resources.ts';
 
 type StatusEntry = {
+  conflictStage?: 1 | 2 | 3;
   oldPath?: string;
   path: string;
   staged: boolean;
@@ -385,6 +386,116 @@ test('parseStatus reads staged rename paths in porcelain v1 -z order', () => {
       untracked: false,
     },
   ]);
+});
+
+test('parseStatus identifies every unmerged status without fake staged changes', () => {
+  for (const [code, conflictStage] of [
+    ['AA', 2],
+    ['AU', 2],
+    ['DD', 1],
+    ['DU', undefined],
+    ['UA', undefined],
+    ['UD', 2],
+    ['UU', 2],
+  ] as const) {
+    expect(parseStatus(`${code} file.txt\0`)).toEqual([
+      {
+        ...(conflictStage ? { conflictStage } : {}),
+        oldPath: undefined,
+        path: 'file.txt',
+        staged: false,
+        status: 'conflicted',
+        unstaged: true,
+        untracked: false,
+      },
+    ]);
+  }
+});
+
+test('readWorkingTreeState renders a merge conflict against our version', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'base\n');
+    await commitAll(repo, 'base');
+    const baseBranch = (await git(repo, ['branch', '--show-current'])).trim();
+
+    await git(repo, ['checkout', '-b', 'other']);
+    await writeRepoFile(repo, 'file.txt', 'theirs\n');
+    await commitAll(repo, 'theirs');
+
+    await git(repo, ['checkout', baseBranch]);
+    await writeRepoFile(repo, 'file.txt', 'ours\n');
+    await commitAll(repo, 'ours');
+    await expect(git(repo, ['merge', 'other'])).rejects.toThrow();
+
+    const state = await readWorkingTreeState(repo);
+    expect(state.files).toHaveLength(1);
+    expect(state.files[0]).toMatchObject({ path: 'file.txt', status: 'conflicted' });
+    expect(state.files[0].sections).toHaveLength(1);
+    expect(state.files[0].sections[0].kind).toBe('unstaged');
+    expect(state.files[0].sections[0].oldFile?.contents).toBe('ours\n');
+    expect(state.files[0].sections[0].newFile?.contents).toContain('<<<<<<< HEAD');
+    expect(state.files[0].sections[0].patch).toContain('+<<<<<<< HEAD');
+    expect(state.files[0].sections[0].patch).not.toContain('* Unmerged path');
+  });
+});
+
+test('readWorkingTreeState compares delete-by-us conflicts against an empty file', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'base\n');
+    await commitAll(repo, 'base');
+    const baseBranch = (await git(repo, ['branch', '--show-current'])).trim();
+
+    await git(repo, ['checkout', '-b', 'other']);
+    await writeRepoFile(repo, 'file.txt', 'theirs\n');
+    await commitAll(repo, 'theirs');
+
+    await git(repo, ['checkout', baseBranch]);
+    await git(repo, ['rm', 'file.txt']);
+    await git(repo, ['commit', '-m', 'ours deletion']);
+    await expect(git(repo, ['merge', 'other'])).rejects.toThrow();
+
+    const state = await readWorkingTreeState(repo);
+    const conflict = state.files[0];
+    expect(conflict.status).toBe('conflicted');
+    expect(conflict.sections).toHaveLength(1);
+    expect(conflict.sections[0].oldFile?.contents).toBe('');
+    expect(conflict.sections[0].newFile?.contents).toBe('theirs\n');
+    expect(conflict.sections[0].patch).toContain('new file mode');
+    expect(conflict.sections[0].patch).toContain('+theirs');
+    expect(conflict.sections[0].patch).not.toContain('* Unmerged path');
+
+    const patchOnlyState = await readWorkingTreeState(repo, { eagerContents: false });
+    expect(patchOnlyState.files[0].sections[0].oldFile?.contents).toBe('');
+    expect(patchOnlyState.files[0].sections[0].newFile?.contents).toBe('theirs\n');
+  });
+});
+
+test('readWorkingTreeState omits unmerged diagnostics when our conflict version is unchanged', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'base\n');
+    await commitAll(repo, 'base');
+    const baseBranch = (await git(repo, ['branch', '--show-current'])).trim();
+
+    await git(repo, ['checkout', '-b', 'other']);
+    await git(repo, ['rm', 'file.txt']);
+    await git(repo, ['commit', '-m', 'theirs deletion']);
+
+    await git(repo, ['checkout', baseBranch]);
+    await writeRepoFile(repo, 'file.txt', 'ours\n');
+    await commitAll(repo, 'ours');
+    await expect(git(repo, ['merge', 'other'])).rejects.toThrow();
+
+    const state = await readWorkingTreeState(repo);
+    expect(state.files[0].sections[0]).toMatchObject({
+      kind: 'unstaged',
+      newFile: { contents: 'ours\n' },
+      oldFile: { contents: 'ours\n' },
+      patch: '',
+    });
+
+    const patchOnlyState = await readWorkingTreeState(repo, { eagerContents: false });
+    expect(patchOnlyState.files[0].sections[0].patch).toBe('');
+  });
 });
 
 test('parseGitHubPullRequestUrl reads canonical pull request URLs', () => {

@@ -252,7 +252,7 @@ const readWorkingTreeState = async (launchPath, options = {}) => {
     if (item.unstaged) {
       sections.push(
         await createSection(repoRoot, item, 'unstaged', {
-          patch: unstagedPatches.get(item.path),
+          patch: item.status === 'conflicted' ? undefined : unstagedPatches.get(item.path),
           patchOnly,
           showWhitespace: options.showWhitespace,
         }),
@@ -350,7 +350,7 @@ const readDiffImageContent = async (launchPath, request) => {
             readIndexImageFile(repoRoot, item.path),
           ])
         : await Promise.all([
-            item.untracked ? undefined : readIndexImageFile(repoRoot, oldPath),
+            item.untracked ? undefined : readIndexImageFile(repoRoot, oldPath, item.conflictStage),
             readWorkingTreeImageFile(repoRoot, item.path),
           ]);
 

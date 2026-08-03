@@ -10,6 +10,7 @@ setCustomExtension('mts', 'typescript');
 
 export const statusLabel: Record<GitFileStatus, string> = {
   added: 'Added',
+  conflicted: 'Conflicted',
   deleted: 'Deleted',
   modified: 'Modified',
   renamed: 'Renamed',

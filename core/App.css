@@ -2918,6 +2918,10 @@ html[data-codiff-platform='darwin'] .sidebar {
   color: rgb(184 49 47);
 }
 
+.codiff-status-badge.conflicted {
+  color: var(--danger);
+}
+
 .codiff-status-badge.renamed,
 .codiff-section-badge.staged {
   color: rgb(143 93 24);

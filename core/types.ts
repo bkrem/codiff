@@ -27,7 +27,13 @@ export type DiffSection = {
   };
 };
 
-export type GitFileStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'untracked';
+export type GitFileStatus =
+  | 'added'
+  | 'conflicted'
+  | 'deleted'
+  | 'modified'
+  | 'renamed'
+  | 'untracked';
 
 export type ChangedFile = {
   fingerprint: string;
