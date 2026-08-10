@@ -23,7 +23,8 @@ import {
 } from './app/components/Panels.tsx';
 import { PlanEditorView } from './app/components/PlanEditorView.tsx';
 import { ReviewCodeView, type ReviewDiffBlock } from './app/components/ReviewCodeView.tsx';
-import { ReviewTopBar, type ReviewModeItem } from './app/components/ReviewTopBar.tsx';
+import type { ReviewModeItem } from './app/components/ReviewModeControl.tsx';
+import { ReviewTopBar } from './app/components/ReviewTopBar.tsx';
 import { Sidebar } from './app/components/Sidebar.tsx';
 import { CommitView } from './app/components/walkthrough/CommitView.tsx';
 import {
@@ -57,6 +58,7 @@ import {
 import {
   type CodeViewInstance,
   type RepositoryLoadError,
+  type ReviewComment,
   type ReviewIdentity,
   type ReviewScrollBehavior,
   type ReviewScrollTarget,
@@ -122,6 +124,7 @@ import type {
   DiffSection,
 } from './types.ts';
 
+const emptyReviewComments: ReadonlyArray<ReviewComment> = [];
 const emptyWalkthroughNotes = new Map<string, WalkthroughNote>();
 const disableCodeViewWorkerPool = process.env.NODE_ENV === 'test';
 
@@ -1802,33 +1805,38 @@ export default function App() {
     >
       <div aria-hidden className="window-drag-region" />
       <ReviewTopBar
-        context={
-          <>
-            {state.branch ? (
-              <span className="review-top-bar-branch" title={state.branch}>
-                {state.branch}
-              </span>
-            ) : null}
-            {sidebarSourceLabel ? (
-              pullRequestUrl ? (
-                <a
-                  className="review-top-bar-source"
-                  href={pullRequestUrl}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <span>{sidebarSourceLabel}</span>
-                  <ArrowSquareOut aria-hidden size={14} weight="bold" />
-                </a>
-              ) : (
-                <span className="review-top-bar-source">{sidebarSourceLabel}</span>
-              )
-            ) : null}
-          </>
+        actions={
+          <CopyCommentsButton
+            comments={isSwitchingSource ? emptyReviewComments : reviewComments}
+            files={orderedFiles}
+            reviewCommentsPrefix={preferences.reviewCommentsPrefix}
+            showWhitespace={showWhitespace}
+          />
         }
-        mode={sidebarMode}
-        modes={reviewModes}
-        onModeChange={changeSidebarMode}
+        center={
+          state.branch ? (
+            <span className="review-top-bar-branch" title={state.branch}>
+              {state.branch}
+            </span>
+          ) : null
+        }
+        context={
+          sidebarSourceLabel ? (
+            pullRequestUrl ? (
+              <a
+                className="review-top-bar-source"
+                href={pullRequestUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span>{sidebarSourceLabel}</span>
+                <ArrowSquareOut aria-hidden size={14} weight="bold" />
+              </a>
+            ) : (
+              <span className="review-top-bar-source">{sidebarSourceLabel}</span>
+            )
+          ) : null
+        }
         onToggleSidebar={toggleSidebar}
         repository={
           <span className="review-top-bar-repository review-top-bar-repository-path">
@@ -1887,16 +1895,6 @@ export default function App() {
         />
       ) : null}
       <KeyboardShortcutsHelp keymap={codiffConfig.keymap} visible={shortcutsHelpVisible} />
-      {!isSwitchingSource ? (
-        <div className="review-action-bar">
-          <CopyCommentsButton
-            comments={reviewComments}
-            files={orderedFiles}
-            reviewCommentsPrefix={preferences.reviewCommentsPrefix}
-            showWhitespace={showWhitespace}
-          />
-        </div>
-      ) : null}
       <aside className="squircle sidebar">
         <Sidebar
           branchSource={
@@ -1922,10 +1920,12 @@ export default function App() {
           historyLoading={historyLoading}
           keymap={codiffConfig.keymap}
           mode={sidebarMode}
+          modes={reviewModes}
           narrativeNavigation={narrativeNavigation}
           narrativeWalkthrough={narrativeWalkthrough}
           onActivatePath={activatePath}
           onLoadMoreHistory={loadMoreHistory}
+          onModeChange={changeSidebarMode}
           onSearchQueryChange={
             sidebarMode === 'history' ? setHistorySearchQuery : setFileSearchQuery
           }

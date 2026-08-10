@@ -721,6 +721,7 @@ html[data-codiff-platform='darwin'] .workspace-top-bar {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   min-width: 0;
   padding: 0 14px 0 78px;
+  position: relative;
 }
 
 .share-shell .review-top-bar {
@@ -740,11 +741,31 @@ html[data-codiff-platform='darwin'] .workspace-top-bar {
 }
 
 .review-top-bar-left {
+  grid-column: 1;
   justify-content: flex-start;
 }
 
 .review-top-bar-right {
+  grid-column: 3;
   justify-content: flex-end;
+}
+
+.review-top-bar-center {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  left: 50%;
+  max-width: min(38%, 320px);
+  min-width: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.review-top-bar-center .review-top-bar-branch {
+  max-width: 100%;
+  pointer-events: auto;
 }
 
 .review-top-bar-repository-slot {
@@ -904,6 +925,40 @@ a.review-top-bar-source:focus-visible {
   background: var(--hover-wash);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
   color: var(--sidebar-text);
+}
+
+.sidebar .review-mode-control {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--sidebar-border);
+  border-radius: 0;
+  corner-shape: initial;
+  display: flex;
+  gap: 4px;
+  height: 38px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.sidebar .review-mode-control button {
+  flex: 1 1 0;
+  height: 26px;
+  overflow: hidden;
+  padding: 0 6px;
+}
+
+.sidebar .review-mode-control button > svg {
+  flex: none;
+}
+
+@container sidebar (max-width: 200px) {
+  .sidebar .review-mode-control button {
+    padding: 0 4px;
+  }
+
+  .sidebar .review-mode-label {
+    display: none;
+  }
 }
 
 .review-mode-label {
@@ -3558,41 +3613,27 @@ diffs-container .review-comment-thread {
   word-break: break-word;
 }
 
-.review-action-bar {
+/* Matches .review-top-bar-icon-button, the sidebar toggle two controls over,
+   so the two read as siblings rather than as different kinds of control. */
+.copy-comments-button {
   -webkit-app-region: no-drag;
   align-items: center;
-  bottom: 16px;
-  display: inline-flex;
-  gap: 12px;
-  position: fixed;
-  right: 16px;
-  z-index: 12;
-}
-
-.copy-comments-button {
-  align-items: center;
-  backdrop-filter: blur(22px) saturate(1.35);
-  background: color-mix(in srgb, var(--code-bg) 78%, transparent);
-  border: 1px solid var(--file-border);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.16) inset,
-    0 0 0 1px var(--file-border),
-    0 18px 80px -54px rgb(0 0 0 / 0.8),
-    0 16px 46px -30px rgb(0 0 0 / 0.72),
-    0 12px 24px -18px rgb(0 0 0 / 0.9);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  corner-shape: squircle;
   cursor: pointer;
   display: inline-flex;
-  height: 46px;
+  flex: none;
+  font: 700 11px/1 var(--font-sans);
+  gap: 5px;
+  height: 28px;
   justify-content: center;
-  padding: 0;
-  transition: all 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  transform: scale(1);
-  width: 46px;
-}
-
-.copy-comments-button {
-  color: var(--copy-icon);
+  padding: 0 8px;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .review-submit-button {
@@ -3744,17 +3785,20 @@ diffs-container .review-comment-thread {
   color: var(--text);
 }
 
-.copy-comments-button:hover {
-  box-shadow:
-    0 0 0 1px var(--file-border),
-    0 26px 96px -48px rgb(0 0 0 / 0.92),
-    0 22px 62px -30px rgb(0 0 0 / 0.82),
-    0 16px 32px -18px rgb(0 0 0 / 0.96);
-  transform: scale(1.05);
+.copy-comments-button:hover:not(:disabled) {
+  background: rgb(127 127 127 / 0.14);
+  color: var(--sidebar-text);
 }
 
-.copy-comments-button:active {
-  transform: scale(0.95);
+.copy-comments-button:active:not(:disabled) {
+  background: rgb(127 127 127 / 0.2);
+  color: var(--sidebar-text);
+}
+
+.copy-comments-button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.5;
 }
 
 .review-submit-button:disabled {
@@ -3762,9 +3806,8 @@ diffs-container .review-comment-thread {
   opacity: 0.58;
 }
 
-.copy-comments-button.copied {
-  background: color-mix(in srgb, var(--code-bg) 80%, var(--viewed) 14%);
-  color: var(--viewed);
+.copy-comments-count {
+  font: 700 11px/1 var(--font-mono);
 }
 
 .copy-comments-icon {
@@ -3774,7 +3817,7 @@ diffs-container .review-comment-thread {
 }
 
 .copy-comments-icon.check {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .review-submit-icon {
@@ -4250,17 +4293,18 @@ diffs-container .review-comment-thread {
 
 @media (max-width: 720px) {
   .review-top-bar-repository-slot,
+  .review-top-bar-center,
   .review-top-bar-context {
     display: none;
   }
 }
 
 @media (max-width: 480px) {
-  .review-mode-control button {
+  .review-top-bar .review-mode-control button {
     padding-inline: 7px;
   }
 
-  .review-mode-label {
+  .review-top-bar .review-mode-label {
     display: none;
   }
 }
