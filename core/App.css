@@ -2198,12 +2198,8 @@ html[data-codiff-platform='darwin'] .sidebar {
 .codiff-markdown-details > summary .codiff-copy-code-button {
   height: 24px;
   margin: -4px 0;
-  width: 24px;
-}
-
-.codiff-markdown-details > summary:hover .codiff-copy-code-button,
-.codiff-markdown-details > summary:focus-within .codiff-copy-code-button {
   opacity: 1;
+  width: 24px;
 }
 
 .codiff-markdown-details > summary::-webkit-details-marker {

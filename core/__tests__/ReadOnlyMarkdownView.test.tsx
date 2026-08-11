@@ -33,6 +33,9 @@ test('extractFencedCodeBlocks returns the contents of each fenced block', () => 
   ]);
   expect(extractFencedCodeBlocks('```ts\nconst a = 1;\n')).toEqual(['const a = 1;']);
   expect(extractFencedCodeBlocks('```\n\n```')).toEqual([]);
+  expect(extractFencedCodeBlocks('```ts\nbefore\n```not-a-close\nafter\n```')).toEqual([
+    'before\n```not-a-close\nafter',
+  ]);
 });
 
 test('ReadOnlyMarkdownView copies the code inside a collapsible block', async () => {
@@ -74,6 +77,41 @@ test('ReadOnlyMarkdownView omits the copy button for collapsibles without code',
   );
 
   expect(view.container.querySelector('.codiff-copy-code-button')).toBe(null);
+});
+
+test('nested collapsibles copy only the code belonging to their own level', async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+
+  await using view = await renderReact(
+    <ReadOnlyMarkdownView
+      ariaLabel="Markdown preview"
+      className="markdown-preview"
+      value={
+        '<details><summary>Outer</summary>\n\n```\nouter before\n```\n\n<details><summary>Inner</summary>\n\n```\ninner\n```\n\n</details>\n\n```\nouter after\n```\n\n</details>'
+      }
+      variant="embedded"
+    />,
+  );
+
+  const details = view.container.querySelectorAll('details');
+  const buttons = view.container.querySelectorAll<HTMLButtonElement>('.codiff-copy-code-button');
+  expect(details).toHaveLength(2);
+  expect(details[0]?.contains(details[1] ?? null)).toBe(true);
+  expect(buttons).toHaveLength(2);
+
+  buttons[0]?.click();
+  await waitFor(() => {
+    expect(writeText).toHaveBeenLastCalledWith('outer before\n\nouter after');
+  });
+
+  buttons[1]?.click();
+  await waitFor(() => {
+    expect(writeText).toHaveBeenLastCalledWith('inner');
+  });
 });
 
 test('ReadOnlyMarkdownView does not render empty paragraph break blocks', async () => {

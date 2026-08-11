@@ -22,16 +22,27 @@ type MarkdownTextPart = {
 
 type MarkdownPart = MarkdownDetailsPart | MarkdownTextPart;
 
-const detailsBlockPattern =
-  /<details\b([^>]*)>\s*<summary\b[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/gi;
 const htmlCommentPattern = /<!--[\s\S]*?-->/g;
+const detailsOpenPattern = /<details\b([^>]*)>/gi;
+const detailsTagPattern = /<\/?details\b[^>]*>/gi;
+const summaryOpenPattern = /^\s*<summary\b[^>]*>/i;
+const summaryClosePattern = /<\/summary>/gi;
 
 const hasOpenAttribute = (attributes: string) =>
   /(?:^|\s)open(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?(?:\s|$)/i.test(attributes);
 const stripHtmlComments = (value: string) => value.replaceAll(htmlCommentPattern, '');
-const getFenceMarker = (line: string) => {
+const getOpeningFenceMarker = (line: string) => {
   const match = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
-  return match?.[1] ?? null;
+  const marker = match?.[1] ?? null;
+  if (!marker || (marker[0] === '`' && line.slice(match![0].length).includes('`'))) {
+    return null;
+  }
+  return marker;
+};
+
+const isClosingFence = (marker: string, line: string) => {
+  const candidate = /^(?: {0,3})(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1] ?? null;
+  return candidate != null && candidate[0] === marker[0] && candidate.length >= marker.length;
 };
 
 export const normalizeReadOnlyMarkdownValue = (value: string) => {
@@ -44,14 +55,9 @@ export const normalizeReadOnlyMarkdownValue = (value: string) => {
   let fenceMarker: string | null = null;
 
   for (const line of lines) {
-    const currentFenceMarker = getFenceMarker(line);
-
     if (fenceMarker) {
       normalizedLines.push(line);
-      if (
-        currentFenceMarker?.startsWith(fenceMarker[0]!) &&
-        currentFenceMarker.length >= fenceMarker.length
-      ) {
+      if (isClosingFence(fenceMarker, line)) {
         fenceMarker = null;
       }
       continue;
@@ -68,8 +74,9 @@ export const normalizeReadOnlyMarkdownValue = (value: string) => {
     pendingBlankLine = false;
     normalizedLines.push(line);
 
-    if (currentFenceMarker) {
-      fenceMarker = currentFenceMarker;
+    const openingFenceMarker = getOpeningFenceMarker(line);
+    if (openingFenceMarker) {
+      fenceMarker = openingFenceMarker;
     }
   }
 
@@ -79,19 +86,14 @@ export const normalizeReadOnlyMarkdownValue = (value: string) => {
     : normalizedValue;
 };
 
-const isClosingFence = (marker: string, candidate: string | null) =>
-  candidate != null && candidate[0] === marker[0] && candidate.length >= marker.length;
-
 export const extractFencedCodeBlocks = (value: string): Array<string> => {
   const blocks: Array<string> = [];
   let fenceMarker: string | null = null;
   let currentBlock: Array<string> = [];
 
   for (const line of value.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
-    const currentFenceMarker = getFenceMarker(line);
-
     if (fenceMarker) {
-      if (isClosingFence(fenceMarker, currentFenceMarker)) {
+      if (isClosingFence(fenceMarker, line)) {
         blocks.push(currentBlock.join('\n'));
         currentBlock = [];
         fenceMarker = null;
@@ -101,8 +103,9 @@ export const extractFencedCodeBlocks = (value: string): Array<string> => {
       continue;
     }
 
-    if (currentFenceMarker) {
-      fenceMarker = currentFenceMarker;
+    const openingFenceMarker = getOpeningFenceMarker(line);
+    if (openingFenceMarker) {
+      fenceMarker = openingFenceMarker;
     }
   }
 
@@ -121,20 +124,65 @@ export const extractFencedCodeBlocks = (value: string): Array<string> => {
 const parseMarkdownDetails = (value: string): Array<MarkdownPart> => {
   const parts: Array<MarkdownPart> = [];
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
+  let searchIndex = 0;
 
-  while ((match = detailsBlockPattern.exec(value))) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'markdown', value: value.slice(lastIndex, match.index) });
+  while (searchIndex < value.length) {
+    detailsOpenPattern.lastIndex = searchIndex;
+    const detailsOpen = detailsOpenPattern.exec(value);
+    if (!detailsOpen) {
+      break;
     }
 
+    const detailsBodyStart = detailsOpenPattern.lastIndex;
+    const summaryOpen = summaryOpenPattern.exec(value.slice(detailsBodyStart));
+    if (!summaryOpen) {
+      searchIndex = detailsBodyStart;
+      continue;
+    }
+
+    const summaryStart = detailsBodyStart + summaryOpen[0].length;
+    summaryClosePattern.lastIndex = summaryStart;
+    const summaryClose = summaryClosePattern.exec(value);
+    if (!summaryClose) {
+      searchIndex = detailsBodyStart;
+      continue;
+    }
+
+    const bodyStart = summaryClosePattern.lastIndex;
+    detailsTagPattern.lastIndex = bodyStart;
+    let depth = 1;
+    let detailsClose: RegExpExecArray | null = null;
+    while (depth > 0) {
+      const tag = detailsTagPattern.exec(value);
+      if (!tag) {
+        break;
+      }
+      if (/^<\/details\b/i.test(tag[0])) {
+        depth -= 1;
+        if (depth === 0) {
+          detailsClose = tag;
+        }
+      } else {
+        depth += 1;
+      }
+    }
+
+    if (!detailsClose) {
+      searchIndex = detailsBodyStart;
+      continue;
+    }
+
+    if (detailsOpen.index > lastIndex) {
+      parts.push({ type: 'markdown', value: value.slice(lastIndex, detailsOpen.index) });
+    }
     parts.push({
-      body: match[3] ?? '',
-      open: hasOpenAttribute(match[1] ?? ''),
-      summary: stripHtmlComments(match[2] ?? '').trim(),
+      body: value.slice(bodyStart, detailsClose.index),
+      open: hasOpenAttribute(detailsOpen[1] ?? ''),
+      summary: stripHtmlComments(value.slice(summaryStart, summaryClose.index)).trim(),
       type: 'details',
     });
-    lastIndex = detailsBlockPattern.lastIndex;
+    lastIndex = detailsTagPattern.lastIndex;
+    searchIndex = lastIndex;
   }
 
   if (lastIndex < value.length) {
