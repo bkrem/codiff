@@ -147,6 +147,7 @@ counts; when it is `false`, Codiff hides those changes from the working-tree rev
     "lastRepositoryPath": "",
     "openAIModel": "gpt-5.6-terra",
     "opencodeModel": "opencode-default",
+    "sidebarPosition": "left",
     "showWhitespace": false,
     "theme": "system",
     "walkthroughPrompt": "",
@@ -171,6 +172,8 @@ counts; when it is `false`, Codiff hides those changes from the working-tree rev
 Set `settings.editorCommand` to customize file opening. Use `{file}` for the selected file,
 `{line}` for its line number when available, and `{repo}` for the repository root, for example
 `"subl \"{repo}\" \"{file}\""`.
+Set `settings.sidebarPosition` to `left` or `right` to choose which side of the desktop window shows
+the file sidebar.
 
 Choose `View > Diff > Split` or `View > Diff > Unified`, use Toggle Diff Layout in the command bar,
 or set `settings.diffStyle` to `split` for side-by-side diffs or `unified` for unified diffs.

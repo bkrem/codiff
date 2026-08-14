@@ -171,6 +171,7 @@ export type ReviewSurfaceProps = {
   providerLabel?: string;
   repositoryUrl?: string;
   settingsBar?: ReactNode;
+  sidebarPosition?: 'left' | 'right';
   signInLabel?: string;
   snapshot: SharedWalkthroughSnapshot;
   sourceDescriptionFooterAside?: ReactNode;
@@ -188,6 +189,7 @@ export function ReviewSurface({
   providerLabel = 'provider',
   repositoryUrl,
   settingsBar,
+  sidebarPosition = 'left',
   signInLabel = 'Sign in to comment',
   snapshot,
   sourceDescriptionFooterAside,
@@ -265,6 +267,7 @@ export function ReviewSurface({
     collapseThreshold: SIDEBAR_COLLAPSE_THRESHOLD,
     onCollapse: () => setSidebarCollapsed(true),
     onWidthCommit: writeSharedSidebarWidth,
+    position: sidebarPosition,
     readWidth: readSharedSidebarWidth,
   });
   const snapshotReviewComments = useMemo(() => getSnapshotReviewComments(snapshot), [snapshot]);
@@ -978,9 +981,17 @@ export function ReviewSurface({
       className={`app-shell share-shell${interactive ? ' merge-request-shell' : ''}${
         sidebarCollapsed ? ' sidebar-collapsed' : ''
       }`}
+      data-sidebar-position={sidebarPosition}
       data-theme={shellTheme}
       style={
-        sidebarCollapsed ? undefined : { gridTemplateColumns: `${sidebarWidth}px 0 minmax(0, 1fr)` }
+        sidebarCollapsed
+          ? undefined
+          : {
+              gridTemplateColumns:
+                sidebarPosition === 'right'
+                  ? `minmax(0, 1fr) 0 ${sidebarWidth}px`
+                  : `${sidebarWidth}px 0 minmax(0, 1fr)`,
+            }
       }
     >
       <ReviewTopBar
@@ -1050,6 +1061,7 @@ export function ReviewSurface({
         }
         repositoryTooltip={snapshot.repository.root}
         sidebarCollapsed={sidebarCollapsed}
+        sidebarPosition={sidebarPosition}
         toggleTitle={`${sidebarCollapsed ? 'Expand' : 'Collapse'} sidebar`}
       />
       <aside className="squircle sidebar">
