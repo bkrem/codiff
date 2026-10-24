@@ -32,12 +32,15 @@ export const zoomMermaidView = (
 };
 
 // d3-zoom's default wheel delta; trackpad pinches arrive as Ctrl+wheel with small deltas.
+// Capped at 2× per event so a Ctrl+mouse-wheel notch doesn't jump straight to the limit.
 export const getWheelZoomFactor = ({
   ctrlKey,
   deltaMode,
   deltaY,
-}: Pick<WheelEvent, 'ctrlKey' | 'deltaMode' | 'deltaY'>) =>
-  2 ** (-deltaY * (deltaMode === 1 ? 0.05 : deltaMode ? 1 : 0.002) * (ctrlKey ? 10 : 1));
+}: Pick<WheelEvent, 'ctrlKey' | 'deltaMode' | 'deltaY'>) => {
+  const delta = -deltaY * (deltaMode === 1 ? 0.05 : deltaMode ? 1 : 0.002) * (ctrlKey ? 10 : 1);
+  return 2 ** Math.min(Math.max(delta, -1), 1);
+};
 
 const cacheLimit = 50;
 const cache = new Map<string, MermaidDiagram>();

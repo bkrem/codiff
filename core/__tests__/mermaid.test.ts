@@ -134,8 +134,14 @@ test('zoomMermaidView clamps the scale between 0.5 and 8', () => {
 });
 
 test('getWheelZoomFactor zooms in on upward scrolls and boosts pinch gestures', () => {
-  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 0, deltaY: -500 })).toBe(2);
-  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 0, deltaY: 500 })).toBe(0.5);
-  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 1, deltaY: -20 })).toBe(2);
-  expect(getWheelZoomFactor({ ctrlKey: true, deltaMode: 0, deltaY: -50 })).toBe(2);
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 0, deltaY: -250 })).toBe(Math.SQRT2);
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 0, deltaY: 250 })).toBe(Math.SQRT1_2);
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 1, deltaY: -10 })).toBe(Math.SQRT2);
+  expect(getWheelZoomFactor({ ctrlKey: true, deltaMode: 0, deltaY: -25 })).toBe(Math.SQRT2);
+});
+
+test('getWheelZoomFactor caps each wheel event at 2x in either direction', () => {
+  expect(getWheelZoomFactor({ ctrlKey: true, deltaMode: 0, deltaY: -100 })).toBe(2);
+  expect(getWheelZoomFactor({ ctrlKey: true, deltaMode: 0, deltaY: 100 })).toBe(0.5);
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 2, deltaY: -3 })).toBe(2);
 });
