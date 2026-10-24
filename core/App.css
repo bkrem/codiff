@@ -2755,6 +2755,19 @@ html[data-codiff-platform='darwin'] .sidebar {
   --mdx-editor-padding: 8px 12px;
 }
 
+.codiff-mermaid-diagram {
+  display: block;
+  height: auto;
+  margin: 18px 0;
+  max-width: 100%;
+}
+
+.codiff-mermaid-error {
+  color: var(--muted);
+  font-size: 12px;
+  margin: -12px 0 18px;
+}
+
 .codiff-markdown-document-editor
   .mdx-editor-content
   li[role='checkbox'][aria-checked='true']::after,

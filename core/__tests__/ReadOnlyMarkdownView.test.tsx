@@ -3,6 +3,7 @@
  */
 
 import { expect, test, vi } from 'vite-plus/test';
+import { MarkdownEditor } from '../app/components/LazyMarkdownEditor.tsx';
 import {
   extractFencedCodeBlocks,
   normalizeReadOnlyMarkdownValue,
@@ -10,6 +11,16 @@ import {
 } from '../app/components/ReadOnlyMarkdownView.tsx';
 import { MarkdownImageSourceProvider } from '../lib/markdownImageSource.ts';
 import { renderReact, waitFor } from './helpers/react.tsx';
+
+const mermaid = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(async (id: string, code: string) => ({
+    diagramType: 'flowchart',
+    svg: `<svg id="${id}" viewBox="0 0 200 100"><text>${code}</text></svg>`,
+  })),
+}));
+
+vi.mock('mermaid', () => ({ default: mermaid }));
 
 test('normalizeReadOnlyMarkdownValue collapses repeated blank lines outside fenced code', () => {
   expect(normalizeReadOnlyMarkdownValue('# Title\n\nNew paragraph.\n')).toBe(
@@ -179,4 +190,81 @@ test('ReadOnlyMarkdownView resolves images in details summaries', async () => {
       '/proxy/https://git.test/icon.png',
     );
   });
+});
+
+test('ReadOnlyMarkdownView renders mermaid fences as diagram images', async () => {
+  await using view = await renderReact(
+    <ReadOnlyMarkdownView
+      ariaLabel="Markdown preview"
+      className="markdown-preview"
+      value={'Intro.\n\n```mermaid\nflowchart TD\nview-->image\n```\n\n```ts\nconst a = 1;\n```\n'}
+      variant="embedded"
+    />,
+  );
+
+  await waitFor(() => {
+    const image = view.container.querySelector<HTMLImageElement>('img.codiff-mermaid-diagram');
+    expect(image?.getAttribute('src')).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
+    expect(decodeURIComponent(image?.getAttribute('src') ?? '')).toContain('view-->image');
+    expect(image?.getAttribute('width')).toBe('200');
+    expect(image?.getAttribute('height')).toBe('100');
+  });
+  expect(view.container.querySelector('.cm-content')?.textContent).toContain('const a = 1;');
+  expect(view.container.textContent).not.toContain('flowchart TD');
+});
+
+test('ReadOnlyMarkdownView renders mermaid fences inside collapsibles', async () => {
+  await using view = await renderReact(
+    <ReadOnlyMarkdownView
+      ariaLabel="Markdown preview"
+      className="markdown-preview"
+      value={
+        '<details open><summary>Diagram</summary>\n\n```Mermaid\nflowchart TD\ndetails-->image\n```\n\n</details>'
+      }
+      variant="embedded"
+    />,
+  );
+
+  await waitFor(() => {
+    expect(view.container.querySelector('details img.codiff-mermaid-diagram')).not.toBe(null);
+  });
+});
+
+test('ReadOnlyMarkdownView shows the code and an error note when a diagram fails', async () => {
+  mermaid.render.mockRejectedValueOnce(new Error('Parse error'));
+
+  await using view = await renderReact(
+    <ReadOnlyMarkdownView
+      ariaLabel="Markdown preview"
+      className="markdown-preview"
+      value={'```mermaid\nflowchart TD\nbroken-->\n```\n'}
+      variant="embedded"
+    />,
+  );
+
+  await waitFor(() => {
+    expect(view.container.querySelector('.codiff-mermaid-error')?.textContent).toBe(
+      'Unable to render Mermaid diagram',
+    );
+  });
+  expect(view.container.querySelector('.cm-content')?.textContent).toContain('broken-->');
+  expect(view.container.querySelector('img.codiff-mermaid-diagram')).toBe(null);
+});
+
+test('editable Markdown editors keep mermaid fences as code', async () => {
+  mermaid.render.mockClear();
+
+  await using view = await renderReact(
+    <MarkdownEditor
+      ariaLabel="Edit comment"
+      value={'```mermaid\nflowchart TD\neditable-->code\n```\n'}
+      variant="embedded"
+    />,
+  );
+
+  await waitFor(() => {
+    expect(view.container.querySelector('.cm-content')?.textContent).toContain('editable-->code');
+  });
+  expect(view.container.querySelector('img.codiff-mermaid-diagram')).toBe(null);
+  expect(mermaid.render).not.toHaveBeenCalled();
 });

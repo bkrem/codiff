@@ -276,6 +276,7 @@ function MarkdownSegment({
         density="compact"
         onHeightChange={onHeightChange}
         readOnly
+        renderDiagrams
         spellCheck={false}
         suppressHtmlProcessing
         value={normalizedValue}
@@ -391,6 +392,7 @@ export function ReadOnlyMarkdownView({
             density={density}
             onHeightChange={onHeightChange}
             readOnly
+            renderDiagrams
             spellCheck={false}
             suppressHtmlProcessing
             value={normalizedValue}
