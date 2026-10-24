@@ -1,5 +1,12 @@
 import { beforeEach, expect, test, vi } from 'vite-plus/test';
-import { getSvgSize, renderMermaidDiagram, toSvgDataUrl } from '../lib/mermaid.ts';
+import {
+  getSvgSize,
+  getWheelZoomFactor,
+  initialMermaidView,
+  renderMermaidDiagram,
+  toSvgDataUrl,
+  zoomMermaidView,
+} from '../lib/mermaid.ts';
 
 const renderSvg = async (id: string, code: string) => ({
   diagramType: 'flowchart',
@@ -109,4 +116,26 @@ test('renderMermaidDiagram does not cache failed renders', async () => {
     src: expect.stringMatching(/^data:image\/svg\+xml/),
   });
   expect(mermaid.render).toHaveBeenCalledTimes(2);
+});
+
+test('zoomMermaidView keeps the point under the origin in place', () => {
+  const view = { scale: 2, x: -40, y: 10 };
+  const zoomed = zoomMermaidView(view, 1.5, 120, 60);
+
+  expect(zoomed.scale).toBe(3);
+  expect((120 - zoomed.x) / zoomed.scale).toBeCloseTo((120 - view.x) / view.scale);
+  expect((60 - zoomed.y) / zoomed.scale).toBeCloseTo((60 - view.y) / view.scale);
+});
+
+test('zoomMermaidView clamps the scale between 0.5 and 8', () => {
+  expect(zoomMermaidView(initialMermaidView, 100, 0, 0).scale).toBe(8);
+  expect(zoomMermaidView(initialMermaidView, 0.01, 0, 0).scale).toBe(0.5);
+  expect(zoomMermaidView({ scale: 8, x: 5, y: 5 }, 2, 50, 50)).toEqual({ scale: 8, x: 5, y: 5 });
+});
+
+test('getWheelZoomFactor zooms in on upward scrolls and boosts pinch gestures', () => {
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 0, deltaY: -500 })).toBe(2);
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 0, deltaY: 500 })).toBe(0.5);
+  expect(getWheelZoomFactor({ ctrlKey: false, deltaMode: 1, deltaY: -20 })).toBe(2);
+  expect(getWheelZoomFactor({ ctrlKey: true, deltaMode: 0, deltaY: -50 })).toBe(2);
 });

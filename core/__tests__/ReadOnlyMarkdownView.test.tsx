@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { act } from 'react';
 import { expect, test, vi } from 'vite-plus/test';
 import { MarkdownEditor } from '../app/components/LazyMarkdownEditor.tsx';
 import {
@@ -21,6 +22,50 @@ const mermaid = vi.hoisted(() => ({
 }));
 
 vi.mock('mermaid', () => ({ default: mermaid }));
+
+const renderDiagram = async (code: string) => {
+  const view = await renderReact(
+    <ReadOnlyMarkdownView
+      ariaLabel="Markdown preview"
+      className="markdown-preview"
+      value={`\`\`\`mermaid\n${code}\n\`\`\`\n`}
+      variant="embedded"
+    />,
+  );
+  await waitFor(() => {
+    expect(view.container.querySelector('img.codiff-mermaid-diagram')).not.toBe(null);
+  });
+  return view;
+};
+
+const getButton = (container: HTMLElement, label: string) => {
+  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  expect(button).not.toBe(null);
+  return button!;
+};
+
+const click = (element: HTMLElement) =>
+  act(async () => {
+    element.click();
+  });
+
+const dispatch = (element: Element, event: Event) =>
+  act(async () => {
+    element.dispatchEvent(event);
+  });
+
+const getTransform = (container: HTMLElement) =>
+  container.querySelector<HTMLImageElement>('img.codiff-mermaid-diagram')?.style.transform;
+
+const pointer = (type: string, clientX: number, clientY: number, button = 0) =>
+  new PointerEvent(type, {
+    bubbles: true,
+    button,
+    cancelable: true,
+    clientX,
+    clientY,
+    pointerId: 1,
+  });
 
 test('normalizeReadOnlyMarkdownValue collapses repeated blank lines outside fenced code', () => {
   expect(normalizeReadOnlyMarkdownValue('# Title\n\nNew paragraph.\n')).toBe(
@@ -249,6 +294,7 @@ test('ReadOnlyMarkdownView shows the code and an error note when a diagram fails
   });
   expect(view.container.querySelector('.cm-content')?.textContent).toContain('broken-->');
   expect(view.container.querySelector('img.codiff-mermaid-diagram')).toBe(null);
+  expect(view.container.querySelector('.codiff-mermaid-control')).toBe(null);
 });
 
 test('editable Markdown editors keep mermaid fences as code', async () => {
@@ -267,4 +313,124 @@ test('editable Markdown editors keep mermaid fences as code', async () => {
   });
   expect(view.container.querySelector('img.codiff-mermaid-diagram')).toBe(null);
   expect(mermaid.render).not.toHaveBeenCalled();
+});
+
+test("rendered diagrams offer GitHub's zoom and pan controls plus source and copy", async () => {
+  await using view = await renderDiagram('flowchart TD\ncontrols-->listed');
+
+  for (const label of [
+    'Zoom in',
+    'Zoom out',
+    'Reset view',
+    'Pan up',
+    'Pan down',
+    'Pan left',
+    'Pan right',
+    'Show source',
+    'Copy code',
+  ]) {
+    getButton(view.container, label);
+  }
+  expect(getTransform(view.container)).toBe('translate(0px, 0px) scale(1)');
+});
+
+test('diagram buttons zoom, pan, and reset the view', async () => {
+  await using view = await renderDiagram('flowchart TD\nbuttons-->move');
+  const { container } = view;
+
+  await click(getButton(container, 'Zoom in'));
+  expect(getTransform(container)).toBe('translate(0px, 0px) scale(1.25)');
+  await click(getButton(container, 'Reset view'));
+  await click(getButton(container, 'Zoom out'));
+  expect(getTransform(container)).toBe('translate(0px, 0px) scale(0.8)');
+  await click(getButton(container, 'Reset view'));
+
+  await click(getButton(container, 'Pan up'));
+  expect(getTransform(container)).toBe('translate(0px, 100px) scale(1)');
+  await click(getButton(container, 'Pan left'));
+  expect(getTransform(container)).toBe('translate(100px, 100px) scale(1)');
+  await click(getButton(container, 'Pan down'));
+  expect(getTransform(container)).toBe('translate(100px, 0px) scale(1)');
+  await click(getButton(container, 'Pan right'));
+  await click(getButton(container, 'Pan right'));
+  expect(getTransform(container)).toBe('translate(-100px, 0px) scale(1)');
+
+  await click(getButton(container, 'Reset view'));
+  expect(getTransform(container)).toBe('translate(0px, 0px) scale(1)');
+});
+
+test('modifier scrolling zooms the diagram while plain scrolling is left alone', async () => {
+  await using view = await renderDiagram('flowchart TD\nwheel-->zoom');
+  const viewport = view.container.querySelector('.codiff-mermaid-viewport')!;
+
+  const plain = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -500 });
+  await dispatch(viewport, plain);
+  expect(plain.defaultPrevented).toBe(false);
+  expect(getTransform(view.container)).toBe('translate(0px, 0px) scale(1)');
+
+  const command = new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    deltaY: -500,
+    metaKey: true,
+  });
+  await dispatch(viewport, command);
+  expect(command.defaultPrevented).toBe(true);
+  expect(getTransform(view.container)).toBe('translate(0px, 0px) scale(2)');
+
+  const pinch = new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY: 50,
+  });
+  await dispatch(viewport, pinch);
+  expect(pinch.defaultPrevented).toBe(true);
+  expect(getTransform(view.container)).toBe('translate(0px, 0px) scale(1)');
+});
+
+test('dragging pans the diagram and double-clicking resets it', async () => {
+  await using view = await renderDiagram('flowchart TD\ndrag-->pan');
+  const viewport = view.container.querySelector('.codiff-mermaid-viewport')!;
+  await dispatch(viewport, pointer('pointerdown', 10, 10, 2));
+  await dispatch(viewport, pointer('pointermove', 40, 30));
+  expect(getTransform(view.container)).toBe('translate(0px, 0px) scale(1)');
+
+  await dispatch(viewport, pointer('pointerdown', 10, 10));
+  await dispatch(viewport, pointer('pointermove', 25, 20));
+  await dispatch(viewport, pointer('pointermove', 40, 30));
+  await dispatch(viewport, pointer('pointerup', 40, 30));
+  await dispatch(viewport, pointer('pointermove', 90, 90));
+  expect(getTransform(view.container)).toBe('translate(30px, 20px) scale(1)');
+
+  await dispatch(viewport, new MouseEvent('dblclick', { bubbles: true }));
+  expect(getTransform(view.container)).toBe('translate(0px, 0px) scale(1)');
+});
+
+test('diagrams copy their Mermaid code and toggle to the source', async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+  await using view = await renderDiagram('flowchart TD\ncopy-->source');
+  const { container } = view;
+
+  await click(getButton(container, 'Copy code'));
+  await waitFor(() => {
+    expect(writeText).toHaveBeenCalledWith('flowchart TD\ncopy-->source');
+  });
+
+  await click(getButton(container, 'Show source'));
+  await waitFor(() => {
+    expect(container.querySelector('.codiff-mermaid-source .cm-content')?.textContent).toContain(
+      'copy-->source',
+    );
+  });
+  expect(container.querySelector('img.codiff-mermaid-diagram')).toBe(null);
+  getButton(container, 'Copy code');
+
+  await click(getButton(container, 'Show diagram'));
+  expect(container.querySelector('img.codiff-mermaid-diagram')).not.toBe(null);
+  expect(container.querySelector('.codiff-mermaid-source')).toBe(null);
 });

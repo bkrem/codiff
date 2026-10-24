@@ -8,6 +8,37 @@ export type MermaidDiagram = {
   width?: number;
 };
 
+export type MermaidView = { scale: number; x: number; y: number };
+
+export const initialMermaidView: MermaidView = { scale: 1, x: 0, y: 0 };
+
+const minScale = 0.5;
+const maxScale = 8;
+
+// Scales around the origin so the point under it stays put.
+export const zoomMermaidView = (
+  view: MermaidView,
+  factor: number,
+  originX: number,
+  originY: number,
+): MermaidView => {
+  const scale = Math.min(Math.max(view.scale * factor, minScale), maxScale);
+  const ratio = scale / view.scale;
+  return {
+    scale,
+    x: originX - (originX - view.x) * ratio,
+    y: originY - (originY - view.y) * ratio,
+  };
+};
+
+// d3-zoom's default wheel delta; trackpad pinches arrive as Ctrl+wheel with small deltas.
+export const getWheelZoomFactor = ({
+  ctrlKey,
+  deltaMode,
+  deltaY,
+}: Pick<WheelEvent, 'ctrlKey' | 'deltaMode' | 'deltaY'>) =>
+  2 ** (-deltaY * (deltaMode === 1 ? 0.05 : deltaMode ? 1 : 0.002) * (ctrlKey ? 10 : 1));
+
 const cacheLimit = 50;
 const cache = new Map<string, MermaidDiagram>();
 
